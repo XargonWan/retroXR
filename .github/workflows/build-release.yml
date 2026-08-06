@@ -17,9 +17,13 @@ on:
         description: 'Release version (optional, e.g. 0.1.2)'
         required: false
         type: string
+      godot_version:
+        description: 'Godot version (e.g., 4.7-stable)'
+        required: true
+        default: '4.7-stable'
 
 env:
-  GODOT_VERSION: "4.7-stable"
+  GODOT_VERSION: ${{ inputs.godot_version }}
 
 jobs:
   build:
