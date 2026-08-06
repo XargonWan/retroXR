@@ -82,13 +82,14 @@ jobs:
         if: matrix.platform == 'windows'
 
       # Windows: Vulkan SDK (needed by libretro-godot SConscript).
-      # Use lukka/install-vulkan-sdk because LunarG frequently removes old
-      # versions from their CDN, breaking direct-download URLs.
-      - uses: lukka/install-vulkan-sdk@v1
+      # Install via winget — more reliable than LunarG's rotating CDN URLs.
+      - name: Install Vulkan SDK (Windows)
         if: matrix.platform == 'windows'
-        with:
-          vulkanVersion: "1.4.341.1"
-          useLatestPatchedVersion: true
+        shell: pwsh
+        run: |
+          winget install --accept-source-agreements --accept-package-agreements --exact --id=LunarG.VulkanSDK -e
+          $sdk = Get-ChildItem "C:\VulkanSDK" -Directory | Sort-Object Name -Descending | Select-Object -First 1
+          echo "VULKAN_SDK=$($sdk.FullName)" >> $env:GITHUB_ENV
 
       # Android: SDK (for Godot APK export) + JDK (for keytool)
       - uses: android-actions/setup-android@v3
@@ -105,55 +106,11 @@ jobs:
           echo "ANDROID_NDK_ROOT=$PWD/android-ndk-r27d" >> "$GITHUB_ENV"
 
       # ------------------------------------------------------------------
-      # Godot editor binary + export templates
-      # ------------------------------------------------------------------
-      - name: Download Godot
-        shell: bash
-        run: |
-          v="$GODOT_VERSION"
-          if [ "${{ matrix.platform }}" = "windows" ]; then
-            url="https://github.com/godotengine/godot/releases/download/${v}/Godot_v${v}_win64.exe.zip"
-          else
-            url="https://github.com/godotengine/godot/releases/download/${v}/Godot_v${v}_linux.x86_64.zip"
-          fi
-          curl -fL "$url" -o godot.zip
-          unzip -q godot.zip
-          if [ "${{ matrix.platform }}" = "windows" ]; then
-            echo "GODOT_BIN=$PWD/Godot_v${v}_win64.exe" >> "$GITHUB_ENV"
-          else
-            chmod +x "Godot_v${v}_linux.x86_64"
-            echo "GODOT_BIN=$PWD/Godot_v${v}_linux.x86_64" >> "$GITHUB_ENV"
-          fi
-
-      # Linux / Android: ~/.local/share/godot/export_templates/
-      - name: Install export templates (Linux / Android)
-        if: matrix.platform != 'windows'
-        shell: bash
-        run: |
-          v="$GODOT_VERSION"
-          tpldir="$HOME/.local/share/godot/export_templates/${v}"
-          mkdir -p "$tpldir"
-          curl -fL "https://github.com/godotengine/godot/releases/download/${v}/Godot_v${v}_export_templates.tpz" -o templates.tpz
-          unzip -o templates.tpz -d /tmp/tpz
-          if [ -d /tmp/tpz/templates ]; then
-            cp -r /tmp/tpz/templates/* "$tpldir"/
-          else
-            cp -r /tmp/tpz/* "$tpldir"/
-          fi
-
-      # Windows: %APPDATA%/Godot/export_templates/
-      - name: Install export templates (Windows)
-        if: matrix.platform == 'windows'
-        shell: pwsh
-        run: |
-          $v = $env:GODOT_VERSION
-          $tpldir = "$env:APPDATA\Godot\export_templates\$v"
-          New-Item -ItemType Directory -Force -Path $tpldir | Out-Null
-          Invoke-WebRequest -Uri "https://github.com/godotengine/godot/releases/download/$v/Godot_v$($v)_export_templates.tpz" -OutFile templates.tpz
-          Expand-Archive -Path templates.tpz -DestinationPath "$env:TEMP\tpz" -Force
-          $src = "$env:TEMP\tpz"
-          if (Test-Path "$src\templates") { $src = "$src\templates" }
-          Copy-Item -Path "$src\*" -Destination $tpldir -Recurse -Force
+      # Godot editor + export templates (all platforms)
+      - uses: chickensoft-games/setup-godot@v2
+        with:
+          version: ${{ env.GODOT_VERSION }}
+          include-templates: true
 
       # ------------------------------------------------------------------
       # Generate export_presets.cfg from committed template
@@ -208,9 +165,9 @@ jobs:
         run: |
           mkdir -p export
           if [ "${{ matrix.platform }}" = "android" ]; then
-            "$GODOT_BIN" --headless --path RetroXR --export-release "${{ matrix.preset }}" export/retroXR.apk
+            godot --headless --path RetroXR --export-release "${{ matrix.preset }}" export/retroXR.apk
           else
-            "$GODOT_BIN" --headless --path RetroXR --export-release "${{ matrix.preset }}" export/
+            godot --headless --path RetroXR --export-release "${{ matrix.preset }}" export/
           fi
 
       # ------------------------------------------------------------------
