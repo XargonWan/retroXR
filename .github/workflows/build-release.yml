@@ -24,7 +24,7 @@ env:
 jobs:
   build:
     strategy:
-      fail-fast: true
+      fail-fast: false
       matrix:
         include:
           - {platform: linux,   arch: x86_64, runner: ubuntu-24.04,  preset: "Linux",           ext: AppImage}
@@ -81,20 +81,14 @@ jobs:
       - uses: ilammy/msvc-dev-cmd@v1
         if: matrix.platform == 'windows'
 
-      # Windows: Vulkan SDK (needed by libretro-godot SConscript)
-      - name: Install Vulkan SDK (Windows)
+      # Windows: Vulkan SDK (needed by libretro-godot SConscript).
+      # Use lukka/install-vulkan-sdk because LunarG frequently removes old
+      # versions from their CDN, breaking direct-download URLs.
+      - uses: lukka/install-vulkan-sdk@v1
         if: matrix.platform == 'windows'
-        shell: pwsh
-        run: |
-          $ver = "1.4.341.1"
-          $url = "https://sdk.lunarg.com/sdk/download/$ver/windows/VulkanSDK-$ver-Installer.exe"
-          Invoke-WebRequest -Uri $url -OutFile vulkan_installer.exe
-          Start-Process -Wait -FilePath .\vulkan_installer.exe -ArgumentList @("--accept-license","--default-answer","--confirm-command","install")
-
-      - name: Set VULKAN_SDK (Windows)
-        if: matrix.platform == 'windows'
-        shell: bash
-        run: echo "VULKAN_SDK=C:/VulkanSDK/1.4.341.1" >> "$GITHUB_ENV"
+        with:
+          vulkanVersion: "1.4.341.1"
+          useLatestPatchedVersion: true
 
       # Android: SDK (for Godot APK export) + JDK (for keytool)
       - uses: android-actions/setup-android@v3
