@@ -82,14 +82,27 @@ jobs:
         if: matrix.platform == 'windows'
 
       # Windows: Vulkan SDK (needed by libretro-godot SConscript).
-      # Install via winget — more reliable than LunarG's rotating CDN URLs.
+      # Install via winget then search for the install directory.
       - name: Install Vulkan SDK (Windows)
         if: matrix.platform == 'windows'
         shell: pwsh
         run: |
           winget install --accept-source-agreements --accept-package-agreements --exact --id=LunarG.VulkanSDK -e
-          $sdk = Get-ChildItem "C:\VulkanSDK" -Directory | Sort-Object Name -Descending | Select-Object -First 1
+          $candidates = @("C:\VulkanSDK", "$env:ProgramFiles\VulkanSDK", "$env:SystemDrive\VulkanSDK")
+          $sdk = $null
+          foreach ($c in $candidates) {
+            if (Test-Path $c) {
+              $sdk = Get-ChildItem $c -Directory | Sort-Object Name -Descending | Select-Object -First 1
+              if ($sdk) { break }
+            }
+          }
+          if (-not $sdk) {
+            # Last resort: deep search on C:\ (capped at 2 dirs deep)
+            $sdk = Get-ChildItem "C:\" -Directory -Depth 2 -ErrorAction SilentlyContinue | Where-Object { $_.Name -match "VulkanSDK" } | Sort-Object FullName -Descending | Select-Object -First 1
+          }
+          if (-not $sdk) { throw "Vulkan SDK not found after winget install" }
           echo "VULKAN_SDK=$($sdk.FullName)" >> $env:GITHUB_ENV
+          echo "Found Vulkan SDK at $($sdk.FullName)"
 
       # Android: SDK (for Godot APK export) + JDK (for keytool)
       - uses: android-actions/setup-android@v3
@@ -182,6 +195,39 @@ jobs:
             -storepass android -keypass android \
             -dname "CN=RetroXR, OU=Dev, O=RetroXR, L=Unknown, ST=Unknown, C=US" \
             -noprompt
+
+      # ------------------------------------------------------------------
+      # Linux / Android: wrap 'ar' with response-file support.
+      # godot-cpp links a static library from 1000+ object files, which can
+      # exceed the kernel's ARG_MAX (sh: Argument list too long).
+      # ------------------------------------------------------------------
+      - name: Wrap ar for long command lines (Linux / Android)
+        if: matrix.platform != 'windows'
+        shell: bash
+        run: |
+          mkdir -p /tmp/ar-wrapper
+          cat > /tmp/ar-wrapper/ar << 'ARWRAP'
+          #!/bin/bash
+          # Fallback for genuine 'ar' calls: pass args through response file.
+          set -o pipefail
+          declare -a args=()
+          for a in "$@"; do args+=("$a"); done
+          if [[ ${#args[@]} -gt 50 ]]; then
+            rsp=$(mktemp /tmp/ar-rsp.XXXXXX)
+            # Operation is args[0]; rest go into the response file.
+            op="${args[0]}"
+            for ((i=1; i<${#args[@]}; i++)); do printf '%s\n' "${args[$i]}" >> "$rsp"; done
+            /usr/bin/ar "$op" "@$rsp"
+            rc=$?
+            rm -f "$rsp"
+          else
+            /usr/bin/ar "$@"
+            rc=$?
+          fi
+          exit $rc
+          ARWRAP
+          chmod +x /tmp/ar-wrapper/ar
+          echo "PATH=/tmp/ar-wrapper:$PATH" >> "$GITHUB_ENV"
 
       # ------------------------------------------------------------------
       # Build all 5 GDExtensions via the project's own build script
