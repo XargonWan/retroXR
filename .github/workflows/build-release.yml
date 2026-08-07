@@ -458,38 +458,42 @@ jobs:
         shell: bash
         run: |
           V="${{ steps.meta.outputs.version }}"
-          VER_DISPLAY="${V:+ v$V}"
-          cat > /tmp/release-notes.md << EOF
-      # RetroXR${VER_DISPLAY}
-
-      ## What's New
-
-      > TODO
-
-      ---
-
-      ## Improvements
-
-      - TODO
-
-      ---
-
-      ## Bug Fixes
-
-      - TODO
-
-      ---
-
-      ## Known Issues
-
-      - TODO
-
-      ---
-
-      ## Downloads
-
-      The binaries below were generated automatically by GitHub Actions.
-      EOF
+          if [ -n "$V" ]; then
+            VER_DISPLAY=" v$V"
+          else
+            VER_DISPLAY=""
+          fi
+          {
+            echo "# RetroXR${VER_DISPLAY}"
+            echo ""
+            echo "## What's New"
+            echo ""
+            echo "> TODO"
+            echo ""
+            echo "---"
+            echo ""
+            echo "## Improvements"
+            echo ""
+            echo "- TODO"
+            echo ""
+            echo "---"
+            echo ""
+            echo "## Bug Fixes"
+            echo ""
+            echo "- TODO"
+            echo ""
+            echo "---"
+            echo ""
+            echo "## Known Issues"
+            echo ""
+            echo "- TODO"
+            echo ""
+            echo "---"
+            echo ""
+            echo "## Downloads"
+            echo ""
+            echo "The binaries below were generated automatically by GitHub Actions."
+          } > /tmp/release-notes.md
           echo "=== Release notes ==="
           cat /tmp/release-notes.md
 
