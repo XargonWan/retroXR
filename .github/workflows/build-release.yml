@@ -1,12 +1,11 @@
-# Build RetroXR for all supported platforms and publish artifacts to a GitHub
-# Draft Release. Triggered manually via workflow_dispatch.
+# Build RetroXR for all supported platforms and publish a GitHub Draft Release.
+# Triggered manually via workflow_dispatch.
 #
-# Output (per platform, optional version from input):
-#   RetroXR-linux-x86_64[-VERSION].AppImage
-#   RetroXR-windows-x86_64[-VERSION].zip
-#   RetroXR-android-arm64[-VERSION].apk
+# Two jobs:
+#   1. build (matrix) — compiles GDExtensions, exports with Godot, packages per platform
+#   2. draft-release — collects all artifacts, creates a draft GitHub Release
 #
-# If any platform fails the draft is not created.
+# If any platform fails, the draft is not created.
 
 name: Build & Draft Release
 
@@ -17,31 +16,51 @@ on:
         description: 'Release version (optional, e.g. 0.1.2)'
         required: false
         type: string
-      godot_version:
-        description: 'Godot version (e.g., 4.7-stable)'
-        required: true
-        default: '4.7-stable'
+
+permissions:
+  contents: write
+  actions: read
 
 env:
-  GODOT_VERSION: ${{ inputs.godot_version }}
+  GODOT_VERSION: '4.7-stable'
 
 jobs:
+  # ==========================================================================
+  # Build matrix — one job per platform, all in parallel
+  # ==========================================================================
   build:
     strategy:
       fail-fast: false
       matrix:
         include:
-          - {platform: linux,   arch: x86_64, runner: ubuntu-24.04,  preset: "Linux",           ext: AppImage}
-          - {platform: windows, arch: x86_64, runner: windows-2025,  preset: "Windows Desktop", ext: zip}
-          - {platform: android, arch: arm64,  runner: ubuntu-24.04,  preset: "Quest",           ext: apk}
+          - id: linux-x86_64
+            platform: linux
+            arch: x86_64
+            runner: ubuntu-24.04
+            preset: Linux
+            ext: AppImage
+          - id: windows-x86_64
+            platform: windows
+            arch: x86_64
+            runner: windows-2025
+            preset: Windows Desktop
+            ext: zip
+          - id: android-arm64
+            platform: android
+            arch: arm64
+            runner: ubuntu-24.04
+            preset: Quest
+            ext: apk
 
+    name: ${{ matrix.id }}
     runs-on: ${{ matrix.runner }}
 
     steps:
       # ------------------------------------------------------------------
       # Checkout
       # ------------------------------------------------------------------
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
         with:
           submodules: recursive
           lfs: true
@@ -55,9 +74,9 @@ jobs:
         run: |
           v="${{ inputs.version }}"
           if [ -n "$v" ]; then
-            echo "name=RetroXR-${{ matrix.platform }}-${{ matrix.arch }}-${v}" >> "$GITHUB_OUTPUT"
+            echo "name=RetroXR-${{ matrix.platform }}-${{ matrix.arch }}-${v}.${{ matrix.ext }}" >> "$GITHUB_OUTPUT"
           else
-            echo "name=RetroXR-${{ matrix.platform }}-${{ matrix.arch }}" >> "$GITHUB_OUTPUT"
+            echo "name=RetroXR-${{ matrix.platform }}-${{ matrix.arch }}.${{ matrix.ext }}" >> "$GITHUB_OUTPUT"
           fi
 
       # ------------------------------------------------------------------
@@ -74,19 +93,18 @@ jobs:
       # Platform-specific dependencies
       # ------------------------------------------------------------------
 
-      # Linux: libVLC headers for vlc-godot extension
+      # Linux / Android: libvlc-dev for the vlc-godot GDExtension
       - name: Install system packages (Linux / Android)
         if: matrix.platform != 'windows'
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y -qq libvlc-dev
 
-      # Windows: MSVC environment
+      # Windows: MSVC compiler toolchain
       - uses: ilammy/msvc-dev-cmd@v1
         if: matrix.platform == 'windows'
 
-      # Windows: Vulkan SDK (needed by libretro-godot SConscript).
-      # Install via winget then search for the install directory.
+      # Windows: Vulkan SDK (needed by libretro-godot for HW render paths)
       - name: Install Vulkan SDK (Windows)
         if: matrix.platform == 'windows'
         shell: pwsh
@@ -101,109 +119,33 @@ jobs:
             }
           }
           if (-not $sdk) {
-            # Last resort: deep search on C:\ (capped at 2 dirs deep)
-            $sdk = Get-ChildItem "C:\" -Directory -Depth 2 -ErrorAction SilentlyContinue | Where-Object { $_.Name -match "VulkanSDK" } | Sort-Object FullName -Descending | Select-Object -First 1
+            $sdk = Get-ChildItem "C:\" -Directory -Depth 2 -ErrorAction SilentlyContinue |
+              Where-Object { $_.Name -match "VulkanSDK" } |
+              Sort-Object FullName -Descending | Select-Object -First 1
           }
           if (-not $sdk) { throw "Vulkan SDK not found after winget install" }
-          echo "VULKAN_SDK=$($sdk.FullName)" >> $env:GITHUB_ENV
-          echo "Found Vulkan SDK at $($sdk.FullName)"
+          "VULKAN_SDK=$($sdk.FullName)" >> $env:GITHUB_ENV
+          Write-Host "Found Vulkan SDK at $($sdk.FullName)"
 
-      # Android: SDK (for Godot APK export) + JDK (for keytool)
+      # Android: SDK (platform-tools, build-tools needed by Godot APK export)
       - uses: android-actions/setup-android@v3
         if: matrix.platform == 'android'
         with:
           packages: 'platforms;android-34 build-tools;34.0.0 platform-tools'
 
-      # Android: NDK r27d (needed by scons / godot-cpp for cross-compilation)
+      # Android: NDK r27d (needed by godot-cpp / scons for cross-compilation)
       - name: Install Android NDK
         if: matrix.platform == 'android'
+        shell: bash
         run: |
-          curl -fL https://dl.google.com/android/repository/android-ndk-r27d-linux.zip -o android-ndk-r27d-linux.zip
-          unzip -q android-ndk-r27d-linux.zip
+          curl -fSL https://dl.google.com/android/repository/android-ndk-r27d-linux.zip -o ndk.zip
+          unzip -q ndk.zip
+          rm ndk.zip
           echo "ANDROID_NDK_ROOT=$PWD/android-ndk-r27d" >> "$GITHUB_ENV"
 
       # ------------------------------------------------------------------
-      # Godot editor + export templates
-      # ------------------------------------------------------------------
-      - name: Download Godot
-        shell: bash
-        run: |
-          v="$GODOT_VERSION"
-          if [ "${{ matrix.platform }}" = "windows" ]; then
-            url="https://github.com/godotengine/godot/releases/download/${v}/Godot_v${v}_win64.exe.zip"
-          else
-            url="https://github.com/godotengine/godot/releases/download/${v}/Godot_v${v}_linux.x86_64.zip"
-          fi
-          curl -fL "$url" -o godot.zip
-          unzip -q godot.zip
-          if [ "${{ matrix.platform }}" = "windows" ]; then
-            echo "GODOT_BIN=$PWD/Godot_v${v}_win64.exe" >> "$GITHUB_ENV"
-          else
-            chmod +x "Godot_v${v}_linux.x86_64"
-            echo "GODOT_BIN=$PWD/Godot_v${v}_linux.x86_64" >> "$GITHUB_ENV"
-          fi
-
-      # Linux / Android: ~/.local/share/godot/export_templates/
-      - name: Install export templates (Linux / Android)
-        if: matrix.platform != 'windows'
-        shell: bash
-        run: |
-          v="$GODOT_VERSION"
-          tpldir="$HOME/.local/share/godot/export_templates/${v}"
-          mkdir -p "$tpldir"
-          curl -fL "https://github.com/godotengine/godot/releases/download/${v}/Godot_v${v}_export_templates.tpz" -o templates.tpz
-          unzip -o templates.tpz -d /tmp/tpz
-          if [ -d /tmp/tpz/templates ]; then
-            cp -r /tmp/tpz/templates/* "$tpldir"/
-          else
-            cp -r /tmp/tpz/* "$tpldir"/
-          fi
-
-      # Windows: %APPDATA%/Godot/export_templates/
-      - name: Install export templates (Windows)
-        if: matrix.platform == 'windows'
-        shell: pwsh
-        run: |
-          $v = $env:GODOT_VERSION
-          $tpldir = "$env:APPDATA\Godot\export_templates\$v"
-          New-Item -ItemType Directory -Force -Path $tpldir | Out-Null
-          Invoke-WebRequest -Uri "https://github.com/godotengine/godot/releases/download/$v/Godot_v$($v)_export_templates.tpz" -OutFile templates.tpz
-          Expand-Archive -Path templates.tpz -DestinationPath "$env:TEMP\tpz" -Force
-          $src = "$env:TEMP\tpz"
-          if (Test-Path "$src\templates") { $src = "$src\templates" }
-          Copy-Item -Path "$src\*" -Destination $tpldir -Recurse -Force
-
-      # ------------------------------------------------------------------
-      # Generate export_presets.cfg from committed template
-      # ------------------------------------------------------------------
-      - name: Generate export_presets.cfg
-        shell: bash
-        run: |
-          python -c "
-          path = 'RetroXR/export_presets.cfg.template'
-          content = open(path).read()
-          content = content.replace('__ANDROID_KEYSTORE_PATH__',     '/tmp/retroxr.keystore')
-          content = content.replace('__ANDROID_KEYSTORE_PASSWORD__', 'android')
-          content = content.replace('__ANDROID_KEYSTORE_ALIAS__',    'retroxr')
-          open('RetroXR/export_presets.cfg', 'w').write(content)
-          "
-
-      # Android: generate a self-signed keystore at the path set above
-      - name: Generate Android keystore
-        if: matrix.platform == 'android'
-        run: |
-          keytool -genkey -v \
-            -keystore /tmp/retroxr.keystore \
-            -alias retroxr \
-            -keyalg RSA -keysize 2048 -validity 10000 \
-            -storepass android -keypass android \
-            -dname "CN=RetroXR, OU=Dev, O=RetroXR, L=Unknown, ST=Unknown, C=US" \
-            -noprompt
-
-      # ------------------------------------------------------------------
-      # Linux / Android: wrap 'ar' with response-file support.
-      # godot-cpp links a static library from 1000+ object files, which can
-      # exceed the kernel's ARG_MAX (sh: Argument list too long).
+      # ar wrapper: godot-cpp links 1000+ object files and can exceed
+      # ARG_MAX on Linux; this wrapper redirects args via a response file.
       # ------------------------------------------------------------------
       - name: Wrap ar for long command lines (Linux / Android)
         if: matrix.platform != 'windows'
@@ -212,13 +154,11 @@ jobs:
           mkdir -p /tmp/ar-wrapper
           cat > /tmp/ar-wrapper/ar << 'ARWRAP'
           #!/bin/bash
-          # Fallback for genuine 'ar' calls: pass args through response file.
           set -o pipefail
           declare -a args=()
           for a in "$@"; do args+=("$a"); done
           if [[ ${#args[@]} -gt 50 ]]; then
             rsp=$(mktemp /tmp/ar-rsp.XXXXXX)
-            # Operation is args[0]; rest go into the response file.
             op="${args[0]}"
             for ((i=1; i<${#args[@]}; i++)); do printf '%s\n' "${args[$i]}" >> "$rsp"; done
             /usr/bin/ar "$op" "@$rsp"
@@ -234,14 +174,19 @@ jobs:
           echo "PATH=/tmp/ar-wrapper:$PATH" >> "$GITHUB_ENV"
 
       # ------------------------------------------------------------------
-      # Build all 5 GDExtensions via the project's own build script
+      # Build all GDExtensions via the project's own build script.
+      # Linux build excludes metaxr-audio (it has no linux target).
       # ------------------------------------------------------------------
       - name: Build GDExtensions
         shell: bash
         run: |
+          set -euo pipefail
+          echo "=== Building GDExtensions for ${{ matrix.platform }} (${{ matrix.arch }}) ==="
+          echo "ANDROID_NDK_ROOT=${ANDROID_NDK_ROOT:-<not set>}"
           case "${{ matrix.platform }}" in
             linux)
-              python3 Tools/build.py linux --target release
+              python3 Tools/build.py linux --target release \
+                --only libretro-godot,verlet-rope,vlc-godot,godot-pdfium
               ;;
             windows)
               python Tools/build.py windows --target release
@@ -250,147 +195,344 @@ jobs:
               python3 Tools/build.py android --target release --ndk "$ANDROID_NDK_ROOT"
               ;;
           esac
+          echo "=== GDExtensions built successfully ==="
 
       # ------------------------------------------------------------------
-      # Godot project export
+      # Godot editor binary
+      # ------------------------------------------------------------------
+      - name: Download Godot editor
+        shell: bash
+        run: |
+          v="$GODOT_VERSION"
+          mkdir -p godot-bin
+          if [ "${{ matrix.platform }}" = "windows" ]; then
+            curl -fSL "https://github.com/godotengine/godot/releases/download/${v}/Godot_v${v}_win64.exe.zip" -o godot.zip
+          else
+            curl -fSL "https://github.com/godotengine/godot/releases/download/${v}/Godot_v${v}_linux.x86_64.zip" -o godot.zip
+          fi
+          unzip -q godot.zip -d godot-bin/
+          rm godot.zip
+          BIN=$(find godot-bin -type f \( -name "Godot_*" -o -name "*.exe" \) | head -1)
+          [ -n "$BIN" ] || { echo "ERROR: Godot binary not found" >&2; ls -la godot-bin/ >&2; exit 1; }
+          chmod +x "$BIN" 2>/dev/null || true
+          echo "GODOT_BIN=$PWD/$BIN" >> "$GITHUB_ENV"
+          echo "Godot: $BIN"
+
+      # ------------------------------------------------------------------
+      # Godot export templates
+      # ------------------------------------------------------------------
+      - name: Download export templates
+        shell: bash
+        run: |
+          v="$GODOT_VERSION"
+          dir="godot-templates/${v}"
+          mkdir -p "$dir"
+          curl -fSL "https://github.com/godotengine/godot/releases/download/${v}/Godot_v${v}_export_templates.tpz" -o templates.tpz
+          unzip -o templates.tpz -d /tmp/tpz
+          rm templates.tpz
+          if [ -d /tmp/tpz/templates ]; then
+            cp -r /tmp/tpz/templates/* "$dir"/
+          else
+            cp -r /tmp/tpz/* "$dir"/
+          fi
+
+      - name: Link export templates (Linux / Android)
+        if: matrix.platform != 'windows'
+        shell: bash
+        run: |
+          v="$GODOT_VERSION"
+          tpldir="$HOME/.local/share/godot/export_templates"
+          mkdir -p "$tpldir"
+          if [ ! -d "$tpldir/${v}" ]; then
+            ln -s "$PWD/godot-templates/${v}" "$tpldir/${v}"
+          fi
+
+      - name: Link export templates (Windows)
+        if: matrix.platform == 'windows'
+        shell: pwsh
+        run: |
+          $v = $env:GODOT_VERSION
+          $tpldir = "$env:APPDATA\Godot\export_templates"
+          New-Item -ItemType Directory -Force -Path $tpldir | Out-Null
+          if (-not (Test-Path "$tpldir\$v")) {
+            New-Item -ItemType Junction -Path "$tpldir\$v" -Target "$PWD\godot-templates\$v" | Out-Null
+          }
+
+      # ------------------------------------------------------------------
+      # Generate real export_presets.cfg from the committed template.
+      # Only the Android (Quest) preset has keystore placeholders.
+      # ------------------------------------------------------------------
+      - name: Generate export_presets.cfg
+        shell: bash
+        run: |
+          cp RetroXR/export_presets.cfg.template RetroXR/export_presets.cfg
+          if [ "${{ matrix.platform }}" = "android" ]; then
+            python3 -c "
+            p = 'RetroXR/export_presets.cfg'
+            c = open(p).read()
+            c = c.replace('__ANDROID_KEYSTORE_PATH__', '/tmp/retroxr.keystore')
+            c = c.replace('__ANDROID_KEYSTORE_PASSWORD__', 'android')
+            c = c.replace('__ANDROID_KEYSTORE_ALIAS__', 'retroxr')
+            open(p, 'w').write(c)
+            "
+          fi
+
+      # Android: generate a self-signed keystore
+      - name: Generate Android keystore
+        if: matrix.platform == 'android'
+        shell: bash
+        run: |
+          keytool -genkey -v \
+            -keystore /tmp/retroxr.keystore \
+            -alias retroxr \
+            -keyalg RSA -keysize 2048 -validity 10000 \
+            -storepass android -keypass android \
+            -dname "CN=RetroXR, OU=Dev, O=RetroXR, L=Unknown, ST=Unknown, C=US" \
+            -noprompt
+
+      # ------------------------------------------------------------------
+      # Godot project export (headless)
       # ------------------------------------------------------------------
       - name: Export project
         shell: bash
         run: |
+          set -euo pipefail
           mkdir -p export
-          if [ "${{ matrix.platform }}" = "android" ]; then
-            "$GODOT_BIN" --headless --path RetroXR --export-release "${{ matrix.preset }}" export/retroXR.apk
-          else
-            "$GODOT_BIN" --headless --path RetroXR --export-release "${{ matrix.preset }}" export/
-          fi
+          echo "=== Exporting with preset '${{ matrix.preset }}' ==="
+          "$GODOT_BIN" --headless --path RetroXR --export-release "${{ matrix.preset }}" export/
+          echo "=== Export complete ==="
+          echo "Export contents:"
+          find export -type f -ls
 
       # ------------------------------------------------------------------
-      # Package artifacts per platform
+      # Package: Linux → AppImage
       # ------------------------------------------------------------------
-
-      # Linux: wrap the export in an AppImage
       - name: Package AppImage
         if: matrix.platform == 'linux'
+        shell: bash
         run: |
           set -euo pipefail
+          ARTIFACT="${{ steps.artifact.outputs.name }}"
+          echo "=== Packaging: $ARTIFACT ==="
 
-          # Download + extract appimagetool (no FUSE needed after extraction)
-          curl -fL https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage -o appimagetool-x86_64.AppImage
-          chmod +x appimagetool-x86_64.AppImage
-          ./appimagetool-x86_64.AppImage --appimage-extract
+          # Download appimagetool and extract (avoids FUSE requirement)
+          curl -fSL https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage -o appimagetool
+          chmod +x appimagetool
+          ./appimagetool --appimage-extract
+          mv squashfs-root appimagetool-extracted
 
-          # Find the exported binary (Godot names it after the project)
-          BINARY=$(find export -maxdepth 1 -name "*.x86_64" -type f | head -1)
+          # Build AppDir structure
+          mkdir -p AppDir/usr/bin
+          cp -r export/* AppDir/usr/bin/
+
+          # Find the exported binary
+          BINARY=$(find AppDir/usr/bin -maxdepth 1 -name "*.x86_64" -type f | head -1)
           if [ -z "$BINARY" ]; then
-            echo "ERROR: no .x86_64 binary found in export/" >&2
-            ls -la export/ >&2
+            echo "ERROR: no .x86_64 binary found in export" >&2
+            find AppDir/usr/bin -type f -ls >&2
             exit 1
           fi
           BIN_NAME=$(basename "$BINARY")
+          echo "Binary: $BIN_NAME"
 
-          # AppDir structure
-          mkdir -p AppDir/usr/bin
-          cp -a export/* AppDir/usr/bin/
-
-          # AppRun entry point
-          cat > AppDir/AppRun << APPRUN
-          #!/bin/bash
-          HERE="\$(dirname "\$(readlink -f "\$0")")"
-          exec "\$HERE/usr/bin/${BIN_NAME}" "\$@"
-          APPRUN
-          chmod +x AppDir/AppRun
-
-          # Desktop entry
-          cat > AppDir/retroXR.desktop << DESKTOP
+          # .desktop file
+          cat > AppDir/retroXR.desktop << 'DESKTOP'
           [Desktop Entry]
-          Name=RetroXR
-          Exec=${BIN_NAME}
+          Name=retroXR
+          Exec=AppRun
           Type=Application
-          Categories=Game;
+          Categories=Game;Emulator;
+          Icon=retroXR
           DESKTOP
 
-          # Build the AppImage
-          ARCH=x86_64 ./squashfs-root/AppRun AppDir "${{ steps.artifact.outputs.name }}.AppImage"
+          # AppRun launcher script
+          cat > AppDir/AppRun << APPRUNEOF
+          #!/bin/bash
+          HERE="\$(dirname "\$(readlink -f "\$0")")"
+          cd "\$HERE/usr/bin"
+          exec "./${BIN_NAME}" "\$@"
+          APPRUNEOF
+          chmod +x AppDir/AppRun
 
-      # Windows: zip the export directory
+          # Minimal 48x48 dark PNG icon (so appimagetool doesn't warn)
+          python3 -c "
+          import struct, zlib
+          def chunk(ctype, data):
+              c = ctype + data
+              return struct.pack('>I', len(data)) + c + struct.pack('>I', zlib.crc32(c) & 0xffffffff)
+          w = h = 48
+          raw = b''
+          for _ in range(h):
+              raw += b'\x00' + bytes([32, 32, 32]) * w
+          ihdr = struct.pack('>IIBBBBB', w, h, 8, 2, 0, 0, 0)
+          png = b'\x89PNG\r\n\x1a\n' + chunk(b'IHDR', ihdr) + chunk(b'IDAT', zlib.compress(raw)) + chunk(b'IEND', b'')
+          open('AppDir/retroXR.png', 'wb').write(png)
+          "
+
+          # Build the AppImage
+          ARCH=x86_64 ./appimagetool-extracted/AppRun AppDir "$ARTIFACT"
+          echo "=== AppImage created: $ARTIFACT ($(stat -c%s "$ARTIFACT") bytes) ==="
+
+      # ------------------------------------------------------------------
+      # Package: Windows → zip
+      # ------------------------------------------------------------------
       - name: Package zip
         if: matrix.platform == 'windows'
         shell: pwsh
-        run: Compress-Archive -Path export\* -DestinationPath "${{ steps.artifact.outputs.name }}.zip"
+        run: |
+          $artifact = "${{ steps.artifact.outputs.name }}"
+          Write-Host "=== Packaging: $artifact ==="
+          Get-ChildItem export/
+          Compress-Archive -Path export\* -DestinationPath $artifact
+          Write-Host "=== Zip created: $artifact ($((Get-Item $artifact).Length) bytes) ==="
 
-      # Android: rename the APK produced by the export step
+      # ------------------------------------------------------------------
+      # Package: Android → rename APK
+      # ------------------------------------------------------------------
       - name: Rename APK
         if: matrix.platform == 'android'
-        run: mv export/retroXR.apk "${{ steps.artifact.outputs.name }}.apk"
+        shell: bash
+        run: |
+          ARTIFACT="${{ steps.artifact.outputs.name }}"
+          APK=$(find export -name "*.apk" -type f | head -1)
+          if [ -z "$APK" ]; then
+            echo "ERROR: no APK found in export" >&2
+            find export -type f -ls >&2
+            exit 1
+          fi
+          cp "$APK" "$ARTIFACT"
+          echo "=== APK: $ARTIFACT ($(stat -c%s "$ARTIFACT") bytes) ==="
 
       # ------------------------------------------------------------------
-      # Upload as workflow artifact (consumed by the release job)
+      # Upload artifact for the release job to consume
       # ------------------------------------------------------------------
-      - uses: actions/upload-artifact@v4
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.platform }}-${{ matrix.arch }}
-          path: ${{ steps.artifact.outputs.name }}.${{ matrix.ext }}
+          name: ${{ matrix.id }}
+          path: ${{ steps.artifact.outputs.name }}
           if-no-files-found: error
 
-  # ====================================================================
-  # Release: runs only after all matrix jobs succeed
-  # ====================================================================
-  create-release:
+  # ==========================================================================
+  # Draft Release — runs only after all platforms build successfully
+  # ==========================================================================
+  draft-release:
     needs: build
-    if: success()
     runs-on: ubuntu-24.04
+    permissions:
+      contents: write
 
     steps:
       - name: Download all artifacts
         uses: actions/download-artifact@v4
         with:
           path: artifacts
-          merge-multiple: true
 
-      - name: Generate release body
+      - name: List artifacts
+        shell: bash
         run: |
-          V="${{ inputs.version }}"
-          H="# RetroXR"
-          if [ -n "$V" ]; then
-            H="# RetroXR v${V}"
+          echo "=== Downloaded artifacts ==="
+          find artifacts -type f -ls
+
+      # ------------------------------------------------------------------
+      # Compute tag, title, and version for the release
+      # ------------------------------------------------------------------
+      - name: Compute release metadata
+        id: meta
+        shell: bash
+        run: |
+          if [ -n "${{ inputs.version }}" ]; then
+            echo "tag=v${{ inputs.version }}" >> "$GITHUB_OUTPUT"
+            echo "title=v${{ inputs.version }}" >> "$GITHUB_OUTPUT"
+            echo "version=${{ inputs.version }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=draft-${{ github.run_id }}" >> "$GITHUB_OUTPUT"
+            echo "title=Draft Release" >> "$GITHUB_OUTPUT"
+            echo "version=" >> "$GITHUB_OUTPUT"
           fi
-          cat > /tmp/release-body.md << 'EOF'
-          HEADING_PLACEHOLDER
 
-          ## What's New
+      # ------------------------------------------------------------------
+      # Generate release notes body from template
+      # ------------------------------------------------------------------
+      - name: Generate release notes
+        shell: bash
+        run: |
+          V="${{ steps.meta.outputs.version }}"
+          VER_DISPLAY="${V:+ v$V}"
+          cat > /tmp/release-notes.md << EOF
+      # RetroXR${VER_DISPLAY}
 
-          > TODO
+      ## What's New
 
-          ---
+      > TODO
 
-          ## Improvements
+      ---
 
-          - TODO
+      ## Improvements
 
-          ---
+      - TODO
 
-          ## Bug Fixes
+      ---
 
-          - TODO
+      ## Bug Fixes
 
-          ---
+      - TODO
 
-          ## Known Issues
+      ---
 
-          - TODO
+      ## Known Issues
 
-          ---
+      - TODO
 
-          ## Downloads
+      ---
 
-          The binaries below were generated automatically by GitHub Actions.
-          EOF
-          sed -i "s|HEADING_PLACEHOLDER|${H}|" /tmp/release-body.md
+      ## Downloads
 
+      The binaries below were generated automatically by GitHub Actions.
+      EOF
+          echo "=== Release notes ==="
+          cat /tmp/release-notes.md
+
+      # ------------------------------------------------------------------
+      # Create the GitHub Draft Release with all binaries attached
+      # ------------------------------------------------------------------
       - name: Create draft release
-        uses: softprops/action-gh-release@v2
-        with:
-          draft: true
-          name: ${{ inputs.version && format('v{0}', inputs.version) || 'Draft Release' }}
-          body_path: /tmp/release-body.md
-          files: artifacts/*
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG="${{ steps.meta.outputs.tag }}"
+          TITLE="${{ steps.meta.outputs.title }}"
+
+          echo "=== Creating draft release: $TAG ==="
+
+          # Clean up any previous release / tag with the same name
+          gh release delete "$TAG" --yes --cleanup-tag 2>/dev/null || true
+          git push origin --delete "$TAG" 2>/dev/null || true
+          git tag -d "$TAG" 2>/dev/null || true
+
+          # Collect all binary assets
+          declare -a ASSETS=()
+          while IFS= read -r -d '' f; do
+            ASSETS+=("$f")
+          done < <(find artifacts -type f \( -name "*.AppImage" -o -name "*.zip" -o -name "*.apk" \) -print0 | sort -z)
+
+          if [ ${#ASSETS[@]} -eq 0 ]; then
+            echo "ERROR: no binary assets found" >&2
+            find artifacts -type f -ls >&2
+            exit 1
+          fi
+
+          echo "Assets to upload:"
+          printf '  %s\n' "${ASSETS[@]}"
+
+          # Create draft release
+          gh release create "$TAG" \
+            --draft \
+            --title "$TITLE" \
+            --notes-file /tmp/release-notes.md \
+            "${ASSETS[@]}"
+
+          echo "=== Draft release created successfully ==="
+          gh release view "$TAG"
