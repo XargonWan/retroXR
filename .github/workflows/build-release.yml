@@ -104,28 +104,73 @@ jobs:
       - uses: ilammy/msvc-dev-cmd@v1
         if: matrix.platform == 'windows'
 
-      # Windows: Vulkan SDK (needed by libretro-godot for HW render paths)
+      # Windows: Vulkan SDK (needed by libretro-godot for HW render paths).
+      # Try VulkanSDK via choco first; fall back to direct LunarG download.
       - name: Install Vulkan SDK (Windows)
         if: matrix.platform == 'windows'
         shell: pwsh
         run: |
-          winget install --accept-source-agreements --accept-package-agreements --exact --id=LunarG.VulkanSDK -e
+          $installOk = $false
+
+          # --- Method 1: check if already installed ---
           $candidates = @("C:\VulkanSDK", "$env:ProgramFiles\VulkanSDK", "$env:SystemDrive\VulkanSDK")
-          $sdk = $null
           foreach ($c in $candidates) {
             if (Test-Path $c) {
               $sdk = Get-ChildItem $c -Directory | Sort-Object Name -Descending | Select-Object -First 1
-              if ($sdk) { break }
+              if ($sdk) {
+                "VULKAN_SDK=$($sdk.FullName)" >> $env:GITHUB_ENV
+                Write-Host "Found pre-installed Vulkan SDK at $($sdk.FullName)"
+                $installOk = $true
+                break
+              }
             }
           }
-          if (-not $sdk) {
-            $sdk = Get-ChildItem "C:\" -Directory -Depth 2 -ErrorAction SilentlyContinue |
-              Where-Object { $_.Name -match "VulkanSDK" } |
-              Sort-Object FullName -Descending | Select-Object -First 1
+          if ($installOk) { exit 0 }
+
+          # --- Method 2: try chocolatey ---
+          try {
+            choco install vulkan-sdk --no-progress --yes 2>&1 | Out-Null
+            if ($LASTEXITCODE -eq 0) {
+              # Find the newly installed SDK
+              foreach ($c in $candidates) {
+                if (Test-Path $c) {
+                  $sdk = Get-ChildItem $c -Directory | Sort-Object Name -Descending | Select-Object -First 1
+                  if ($sdk) {
+                    "VULKAN_SDK=$($sdk.FullName)" >> $env:GITHUB_ENV
+                    Write-Host "Installed Vulkan SDK (choco) at $($sdk.FullName)"
+                    $installOk = $true
+                    break
+                  }
+                }
+              }
+            }
+          } catch {
+            Write-Host "choco install failed: $_"
           }
-          if (-not $sdk) { throw "Vulkan SDK not found after winget install" }
-          "VULKAN_SDK=$($sdk.FullName)" >> $env:GITHUB_ENV
-          Write-Host "Found Vulkan SDK at $($sdk.FullName)"
+          if ($installOk) { exit 0 }
+
+          # --- Method 3: direct download from LunarG ---
+          $installerUrl = "https://sdk.lunarg.com/sdk/download/latest/windows/vulkan-sdk.exe"
+          $installer = "$env:TEMP\vulkan-sdk-installer.exe"
+          Write-Host "Downloading Vulkan SDK installer..."
+          Invoke-WebRequest -Uri $installerUrl -OutFile $installer
+          Write-Host "Running installer (silent)..."
+          Start-Process -FilePath $installer -ArgumentList "--accept-licenses --default-answer --confirm-command install" -Wait -NoNewWindow
+          # Find the newly installed SDK
+          foreach ($c in $candidates) {
+            if (Test-Path $c) {
+              $sdk = Get-ChildItem $c -Directory | Sort-Object Name -Descending | Select-Object -First 1
+              if ($sdk) {
+                "VULKAN_SDK=$($sdk.FullName)" >> $env:GITHUB_ENV
+                Write-Host "Installed Vulkan SDK (direct) at $($sdk.FullName)"
+                $installOk = $true
+                break
+              }
+            }
+          }
+          if (-not $installOk) {
+            throw "Failed to install Vulkan SDK via all methods"
+          }
 
       # Android: SDK (platform-tools, build-tools needed by Godot APK export)
       - uses: android-actions/setup-android@v3
@@ -145,33 +190,100 @@ jobs:
 
       # ------------------------------------------------------------------
       # ar wrapper: godot-cpp links 1000+ object files and can exceed
-      # ARG_MAX on Linux; this wrapper redirects args via a response file.
+      # ARG_MAX on Linux / Android. SCons resolves ar to an absolute path,
+      # so a PATH-only shim is not enough — we must replace the real binary.
       # ------------------------------------------------------------------
-      - name: Wrap ar for long command lines (Linux / Android)
+      - name: Replace ar with response-file wrapper (Linux / Android)
         if: matrix.platform != 'windows'
         shell: bash
         run: |
-          mkdir -p /tmp/ar-wrapper
-          cat > /tmp/ar-wrapper/ar << 'ARWRAP'
+          # Install the wrapper script into /usr/local/bin (writable, early in PATH).
+          # The Build GDExtensions step will export AR=/usr/local/bin/ar-wrapper
+          # so scons uses it regardless of the absolute path it auto-detected.
+          sudo tee /usr/local/bin/ar-wrapper > /dev/null << 'ARWRAP'
           #!/bin/bash
+          # ar-wrapper: redirect long argument lists into a response file.
+          # Supports GNU ar, LLVM llvm-ar, and NDK cross-ar binaries.
           set -o pipefail
+          
+          # Determine the real ar binary: if we are a replacement for a specific
+          # binary (e.g. symlinked as "ar" or "llvm-ar"), find the original by
+          # looking in PATH excluding ourselves.
+          myname=$(basename "$0")
+          real=""
+          if [ "$myname" = "ar-wrapper" ]; then
+            # Called via AR env var — find "ar" in PATH skipping this script.
+            real=$(PATH="$(echo "$PATH" | tr ':' '\n' | grep -v "/usr/local/bin" | tr '\n' ':')" command -v ar 2>/dev/null || echo /usr/bin/ar)
+          else
+            # Symlinked as a specific name — find the real one.
+            real=$(PATH="$(echo "$PATH" | tr ':' '\n' | grep -v "$(dirname "$0")" | tr '\n' ':')" command -v "$myname" 2>/dev/null)
+            if [ -z "$real" ]; then
+              # Fallback: common locations
+              for d in /usr/bin /usr/local/bin; do
+                if [ -x "$d/$myname" ] && [ "$d/$myname" != "$0" ]; then
+                  real="$d/$myname"
+                  break
+                fi
+              done
+            fi
+          fi
+          if [ -z "$real" ] || [ ! -x "$real" ]; then
+            echo "ar-wrapper: cannot find real ar binary for '$myname'" >&2
+            exit 1
+          fi
+          
+          # Count arguments. If there are many .o files, redirect via response file.
           declare -a args=()
           for a in "$@"; do args+=("$a"); done
-          if [[ ${#args[@]} -gt 50 ]]; then
+          if [ ${#args[@]} -gt 50 ]; then
             rsp=$(mktemp /tmp/ar-rsp.XXXXXX)
+            # args[0] is the operation (e.g. "rcs"), the rest are the output .a + .o files.
             op="${args[0]}"
-            for ((i=1; i<${#args[@]}; i++)); do printf '%s\n' "${args[$i]}" >> "$rsp"; done
-            /usr/bin/ar "$op" "@$rsp"
+            for ((i=1; i<${#args[@]}; i++)); do
+              printf '%s\n' "${args[$i]}"
+            done > "$rsp"
+            "$real" "$op" "@$rsp"
             rc=$?
             rm -f "$rsp"
           else
-            /usr/bin/ar "$@"
+            "$real" "$@"
             rc=$?
           fi
           exit $rc
           ARWRAP
-          chmod +x /tmp/ar-wrapper/ar
-          echo "PATH=/tmp/ar-wrapper:$PATH" >> "$GITHUB_ENV"
+          sudo chmod +x /usr/local/bin/ar-wrapper
+          
+          # Also symlink as plain "ar" so setting AR=ar-wrapper has a proper name.
+          sudo ln -sf /usr/local/bin/ar-wrapper /usr/local/bin/ar
+
+      # ------------------------------------------------------------------
+      # Pre-build: export AR and, on Android, wrap the NDK ar as well
+      # ------------------------------------------------------------------
+      - name: Export AR for long command lines (Linux / Android)
+        if: matrix.platform != 'windows'
+        shell: bash
+        run: |
+          echo "AR=/usr/local/bin/ar-wrapper" >> "$GITHUB_ENV"
+          echo "RANLIB=/usr/local/bin/ar-wrapper" >> "$GITHUB_ENV"
+          if [ "${{ matrix.platform }}" = "android" ]; then
+            # NDK provides llvm-ar; scons may call it directly.
+            # Symlink our wrapper so the NDK's ar also goes through response files.
+            NDK_AR="$ANDROID_NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-ar"
+            if [ -f "$NDK_AR" ]; then
+              sudo mv "$NDK_AR" "$NDK_AR.real"
+              sudo ln -s /usr/local/bin/ar-wrapper "$NDK_AR"
+              echo "Wrapped $NDK_AR"
+            fi
+            # Some older NDKs have aarch64-linux-android-ar
+            for cross_ar in "$ANDROID_NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/bin/"*-linux-android*-ar; do
+              if [ -f "$cross_ar" ] && [ ! -L "$cross_ar" ]; then
+                sudo mv "$cross_ar" "$cross_ar.real"
+                sudo ln -s /usr/local/bin/ar-wrapper "$cross_ar"
+                echo "Wrapped $cross_ar"
+              fi
+            done
+          fi
+          echo "AR wrapper active: $(command -v ar-wrapper || echo 'NOT FOUND')"
 
       # ------------------------------------------------------------------
       # Build all GDExtensions via the project's own build script.
@@ -186,13 +298,15 @@ jobs:
           case "${{ matrix.platform }}" in
             linux)
               python3 Tools/build.py linux --target release \
-                --only libretro-godot,verlet-rope,vlc-godot,godot-pdfium
+                --only libretro-godot,verlet-rope,vlc-godot,godot-pdfium \
+                AR=/usr/local/bin/ar-wrapper RANLIB=/usr/local/bin/ar-wrapper
               ;;
             windows)
               python Tools/build.py windows --target release
               ;;
             android)
-              python3 Tools/build.py android --target release --ndk "$ANDROID_NDK_ROOT"
+              python3 Tools/build.py android --target release --ndk "$ANDROID_NDK_ROOT" \
+                AR=/usr/local/bin/ar-wrapper RANLIB=/usr/local/bin/ar-wrapper
               ;;
           esac
           echo "=== GDExtensions built successfully ==="
