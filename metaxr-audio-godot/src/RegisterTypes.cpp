@@ -21,6 +21,7 @@ void initialize_metaxr_audio(ModuleInitializationLevel p_level)
 
     ClassDB::register_class<Xenu::MetaXRAudioPlayback>();
     ClassDB::register_class<Xenu::MetaXRAudioStream>();
+    ClassDB::register_internal_class<Xenu::MetaXRAudioMixer>();
     ClassDB::register_class<Xenu::MetaXRAudioServer>();
 
     // Exposed to GDScript as `MetaXRAudio`. The constructor tries to load the

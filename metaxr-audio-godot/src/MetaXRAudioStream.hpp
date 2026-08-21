@@ -2,6 +2,7 @@
 
 #include <godot_cpp/classes/audio_stream.hpp>
 #include <godot_cpp/classes/audio_stream_playback.hpp>
+#include <godot_cpp/classes/audio_stream_player.hpp>
 #include <godot_cpp/classes/audio_frame.hpp>
 
 namespace Xenu
@@ -37,6 +38,26 @@ public:
     godot::String _get_stream_name() const override;
     double        _get_length() const override;
     bool          _is_monophonic() const override;
+
+protected:
+    static void _bind_methods() {}
+};
+
+/// The output player itself, so that the mixer can retire when nothing is
+/// feeding it.
+///
+/// It has to go before the main loop stops: Godot frees this extension's class
+/// records in deinitialize_extensions(SCENE) but does not destroy the playback
+/// the AudioServer is holding until memdelete(audio_server), several steps
+/// later, and that destructor calls through the freed records. Only
+/// AudioServer::update() hands a stopped playback back, and that runs on the
+/// main thread, so the release needs frames left to run in.
+class MetaXRAudioMixer : public godot::AudioStreamPlayer
+{
+    GDCLASS(MetaXRAudioMixer, godot::AudioStreamPlayer)
+
+public:
+    void _process(double p_delta) override;
 
 protected:
     static void _bind_methods() {}

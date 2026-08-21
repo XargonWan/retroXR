@@ -162,7 +162,7 @@ AudioStreamPlayer* MetaXRAudioServer::LivePlayer() const
     return Object::cast_to<AudioStreamPlayer>(ObjectDB::get_instance(m_player_id));
 }
 
-void MetaXRAudioServer::Shutdown()
+void MetaXRAudioServer::ReleaseMixer()
 {
     if (AudioStreamPlayer* player = LivePlayer())
     {
@@ -181,6 +181,11 @@ void MetaXRAudioServer::Shutdown()
     }
     m_player_id = 0;
     m_stream.unref();
+}
+
+void MetaXRAudioServer::Shutdown()
+{
+    ReleaseMixer();
 
     if (m_ctx)
     {
@@ -203,10 +208,11 @@ void MetaXRAudioServer::EnsurePlayer()
         return;
 
     m_stream.instantiate();
-    AudioStreamPlayer* player = memnew(AudioStreamPlayer);
+    MetaXRAudioMixer* player = memnew(MetaXRAudioMixer);
     m_player_id = static_cast<uint64_t>(player->get_instance_id());
     player->set_name("MetaXRAudioMixer");
     player->set_stream(m_stream);
+    player->set_process(true);
 
     // Deferred, because the first voice is usually created from some device's
     // _ready, and a node cannot be parented to the root while the root is still

@@ -48,4 +48,11 @@ double MetaXRAudioStream::_get_length() const { return 0.0; }
 
 bool MetaXRAudioStream::_is_monophonic() const { return false; }
 
+void MetaXRAudioMixer::_process(double /*p_delta*/)
+{
+    MetaXRAudioServer* server = MetaXRAudioServer::GetSingleton();
+    if (server != nullptr && server->GetActiveVoiceCount() == 0)
+        server->ReleaseMixer();
+}
+
 } // namespace Xenu

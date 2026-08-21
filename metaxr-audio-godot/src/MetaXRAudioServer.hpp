@@ -204,6 +204,11 @@ public:
 
     int  GetActiveVoiceCount() const;
 
+    /// Stops and frees the output player. EnsurePlayer builds a new one the next
+    /// time a voice is created, so this is a pause in the mix rather than an end
+    /// to it. Driven by MetaXRAudioMixer, which explains the timing.
+    void ReleaseMixer();
+
     /// Renders `frames` of the mix synchronously, bypassing the audio device.
     /// Godot's headless mode uses the dummy audio driver and never calls _mix,
     /// so this is the only way to test the mixer in a headless probe.
