@@ -334,7 +334,9 @@ tray/eject and media insertion, every TV bezel/remote action (power, volume,
 mute, CRT, stereo/audio modes, aspect, source and channel), deck transports,
 cables/ports, book controls, wall and pull-chain lights, blinds and time of day.
 Late-join snapshots also carry the TV control state and those fixed room controls,
-not only spawned objects. It has no ROM, headset or display dependency.
+not only spawned objects. Articulated updates are capped at 64 per reliable
+packet, with overflow retained for following packets rather than discarded. It
+has no ROM, headset or display dependency.
 Each group is independently runnable.
 ```bash
 "$godot" --headless --path RetroXR res://Tests/object_sync_tests.tscn
@@ -606,6 +608,16 @@ handshake are already the real ones, and one process keeps the run deterministic
 and headless. It replaced `Tools/netplay_session_probe.tscn`, which was the same
 idea at a quarter of the coverage.
 
+Godot 4.7 currently prints a fixed `ObjectDB` shutdown warning after these
+in-process branch-ENet suites (`18 RefCounted` objects in the ordinary netplay
+run). It is the engine's RPC cache interaction with the project's NetworkManager
+autoload, not an accumulating session leak: one pair and many sequential pairs
+leave the same fixed count, a raw ENet pair in this project reproduces it, and
+the same raw pair in a minimal project without the autoload is clean. Removing
+the autoload before connecting suppresses the warning but leaves Godot with a
+dangling autoload singleton and eventually crashes the full suite, so do not
+hide it that way. The passing case count and exit status remain the gate.
+
 What no suite here can cover is a real core's arithmetic. That is
 `Tools/netplay_spike.gd`, and it now has a **cross-machine leg**, which is the
 only thing that tests the one payload lockstep actually puts on the wire — a
@@ -743,7 +755,9 @@ Two things this had to get right, and both are the same rule:
   search from the machine would have decided a cabled GameCube was on no bus at
   all. `net_link_bus` therefore sweeps both the `link_plug` and `controller_plug`
   groups. (That the GC end is in `controller_plug` and not `link_plug` is pinned
-  by `link_tests`; that `net_link_bus` must consult both is only reasoned.)
+  by `link_tests`; the same suite seats both ends through their real socket APIs
+  and verifies that `net_link_bus` discovers the console through
+  `controller_plug`.)
 - **A plug seated mid-game lands on ONE agreed frame.** `LinkCoordinator.hpp`
   says so itself: the thing it cannot enforce is that Connect and Disconnect
   happen on the same emulated frame on every peer, and that is the caller's job.
