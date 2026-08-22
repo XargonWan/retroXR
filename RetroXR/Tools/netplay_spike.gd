@@ -43,6 +43,7 @@ var root_dir := _home + "/retroxr/libretro"
 var core := "fceumm"
 var rom := _home + "/retroxr/roms/nes/probe.nes"
 var rollback := false
+var crc_interval := 60   ## 1 finds the FIRST diverging frame, not merely that one exists
 var timeout_s := 110.0   ## a heavy core needs far more than the default
 ## --spike-option=key=value, repeatable. Vetting a core often means vetting one
 ## of its DRIVERS: mGBA carries a Game Boy, a Game Boy Color and a Game Boy
@@ -98,6 +99,8 @@ func _ready() -> void:
 			rom = arg.trim_prefix("--spike-rom=")
 		elif arg.begins_with("--spike-root="):
 			root_dir = arg.trim_prefix("--spike-root=")
+		elif arg.begins_with("--spike-crc-interval="):
+			crc_interval = int(arg.trim_prefix("--spike-crc-interval="))
 		elif arg.begins_with("--spike-option="):
 			var kv := arg.trim_prefix("--spike-option=").split("=", true, 1)
 			if kv.size() == 2:
@@ -129,6 +132,8 @@ func _ready() -> void:
 	_lib.connect("savestate_loaded", _on_state_loaded)
 	# Gate BEFORE starting content: the core holds at frame 0 until inputs post.
 	_lib.SetNetplayMode(true, 0x1, 0)
+	if _lib.has_method("SetNetplayCrcInterval"):
+		_lib.SetNetplayCrcInterval(crc_interval)
 	# Rollback mode: port 0 is REMOTE (local_mask 0) so the engine predicts it
 	# and our lagged confirmations force rewind+replay corrections.
 	_lib.SetNetplayRollback(rollback, 0, ROLLBACK_MAX_AHEAD)
