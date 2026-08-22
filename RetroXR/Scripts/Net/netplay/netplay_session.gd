@@ -2793,8 +2793,12 @@ func _check_crc(frame: int, machine_index: int) -> void:
 	for peer_id: int in t:
 		if int(t[peer_id]) != ref and peer_id != 1:
 			_strikes[peer_id] = int(_strikes.get(peer_id, 0)) + 1
-			print("[Netplay] DESYNC peer %d @frame %d (strike %d/%d)" %
-				[peer_id, frame, _strikes[peer_id], CRC_STRIKES])
+			# Which MACHINE, not just which peer. A session can be five machines
+			# over two cores, and "somebody disagreed" does not say whether to go
+			# looking at the console or a handheld -- the one thing the message
+			# is for. The index is already in hand here.
+			print("[Netplay] DESYNC peer %d machine %d @frame %d (strike %d/%d)" %
+				[peer_id, machine_index, frame, _strikes[peer_id], CRC_STRIKES])
 			desync_detected.emit(peer_id, frame)
 			if _strategy == NetplayCores.Strategy.DETERMINISM:
 				# Report and stop, on the FIRST disagreement. Under determinism
