@@ -453,10 +453,20 @@ func _save_sheet(mesh: ArrayMesh, path: String) -> void:
 ## here do not agree: the shell and the boot are stacked downward from the crown and
 ## the tail, the stick and the keys upward from their seats. Wound by hand that is a
 ## sign to get wrong in three places out of five — it was, first run — so nothing here
-## reasons about it. The soup is weighed and flipped whole if it encloses a negative
-## volume, and _save then re-weighs the committed mesh as a genuine assertion.
+## reasons about it. The soup is weighed and flipped whole.
+##
+## The TARGET SIGN is negative, and this shipped with it positive. Godot's front face
+## is the CLOCKWISE one, so `generate_normals` returns the negative of the textbook
+## (b-a) x (c-a): a soup wound anticlockwise-from-outside — the orientation the
+## divergence theorem calls POSITIVE volume — is back-to-front for the renderer.
+##
+## An inside-out solid does not look inverted, which is why this survived so long.
+## It still paints an opaque silhouette, because what you see is the far inner
+## surface. What it stops doing is OCCLUDING: every outward face is culled, so it
+## writes no depth on the side you are looking at and anything inside or behind it
+## draws straight through. Believe `_check_outward` rather than this comment.
 static func _orient(tris: Array[Vector3]) -> Array[Vector3]:
-	if _volume(tris) >= 0.0:
+	if _volume(tris) <= 0.0:
 		return tris
 	var out: Array[Vector3] = []
 	for i in range(0, tris.size(), 3):
@@ -464,8 +474,6 @@ static func _orient(tris: Array[Vector3]) -> Array[Vector3]:
 	return out
 
 
-## Signed volume of a closed triangle soup. Independent of where the origin sits,
-## which a "does this normal point away from the middle" test is not.
 static func _volume(tris: Array[Vector3]) -> float:
 	var v := 0.0
 	for i in range(0, tris.size(), 3):
@@ -476,9 +484,36 @@ static func _volume(tris: Array[Vector3]) -> float:
 func _save(mesh: ArrayMesh, path: String) -> void:
 	var err := ResourceSaver.save(mesh, path)
 	var ab: AABB = mesh.get_aabb()
-	var vol := _enclosed(mesh)
-	print("[gen] %-44s err=%d  %.4f x %.4f x %.4f m  vol %+.9f %s" % [path, err,
-		ab.size.x, ab.size.y, ab.size.z, vol, "" if vol > 0.0 else "  <-- INSIDE OUT"])
+	print("[gen] %-44s err=%d  %.4f x %.4f x %.4f m  %s" % [path, err,
+		ab.size.x, ab.size.y, ab.size.z, _check_outward(mesh)])
+
+
+## Does this solid face outward, as the RENDERER will read it?
+##
+## NOT a volume sign — that is the test that was wrong here, and it passed for
+## every mesh in this file while all of them were inside out. This reads the
+## normals actually stored in the committed mesh, at the six vertices furthest
+## along each axis, and asks whether each points the way that vertex faces.
+##
+## It is worth the lines because it is the only check here that can tell an
+## inside-out solid from a correct one. A volume sign, an AABB and a manifold edge
+## count are identical for both.
+static func _check_outward(mesh: ArrayMesh) -> String:
+	var arrays := mesh.surface_get_arrays(0)
+	var v: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
+	var n: PackedVector3Array = arrays[Mesh.ARRAY_NORMAL]
+	var bad: Array[String] = []
+	var axes := {"+X": Vector3.RIGHT, "-X": Vector3.LEFT, "+Y": Vector3.UP,
+		"-Y": Vector3.DOWN, "+Z": Vector3.BACK, "-Z": Vector3.FORWARD}
+	for label: String in axes:
+		var axis: Vector3 = axes[label]
+		var best := 0
+		for i in v.size():
+			if v[i].dot(axis) > v[best].dot(axis):
+				best = i
+		if n[best].dot(axis) <= 0.0:
+			bad.append(label)
+	return "outward" if bad.is_empty() else "<-- INSIDE OUT on %s" % ", ".join(bad)
 
 
 ## Signed volume of the committed solid, read back from its own stored arrays.
