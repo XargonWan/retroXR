@@ -92,6 +92,7 @@ var _audio_player: AudioStreamPlayer3D = null
 # The C++ AudioHandler owns their lifetime; this script only places them.
 var _audio_voices: PackedInt32Array = PackedInt32Array()
 var _audio_bind_settled := false
+var _port_devices_settled := false
 # The card that floats over this machine's picture — achievement unlocks, and
 # the notice raised when a game cannot run. Made on demand rather than at
 # power-on: most sessions raise neither, and it costs a SubViewport.
@@ -1926,6 +1927,7 @@ func _process(_delta: float) -> void:
 			_libretro.SetSensorAccel(0, a.x, -a.z, a.y)
 	_update_disc_spin(_delta)
 	_ensure_audio_bound()
+	_ensure_port_devices_bound()
 	_update_audio_position()
 	# Nothing left to do until something switches on again. Tested here rather
 	# than per frame from outside: a room holds a lot of these, most of them off.
@@ -2117,6 +2119,7 @@ func _after_core_started() -> void:
 	# A fresh run re-asks which backend came up — that is decided per core start,
 	# and this first attempt is expected to find neither.
 	_audio_bind_settled = false
+	_port_devices_settled = false
 	_bind_audio_player()
 	is_powered_on = true
 	set_process(true)
@@ -2992,6 +2995,41 @@ func _reannounce_port_devices() -> void:
 			announce = _wii_link.cabinet_device_id(dev)
 		var lib_port := _libretro_port_for(dev, i)
 		set_controller_port_device(lib_port, _core_device_id(announce, lib_port))
+
+
+## Say what is on each port a SECOND time, once the core has actually run a frame.
+##
+## _reannounce_port_devices at options_ready is enough for anything announced
+## while a core was already running: Wrapper queues that as an emulation-thread
+## command and it lands between frames. A device announced while the machine was
+## OFF does not take that path. It goes into Wrapper's pending map and is applied
+## right after retro_load_game — which is canonical, and is also before the first
+## retro_run.
+##
+## That is too early for a core which decides anything on its first pass. Dolphin
+## turns its sensors on in InitSensors(), at the top of frame 0, and binds a Wii
+## Remote's accelerometer and gyroscope INSIDE retro_set_controller_port_device
+## only if that has already happened. So a remote paired before the console was
+## switched on — which is the ordinary way round, you press SYNC and then you
+## press POWER — got no motion at all for the whole session, and nothing rebound
+## it short of pulling the Nunchuk out and putting it back.
+##
+## Measured with Tools/prestart_probe: "Applying pre-start port device: port=0
+## device=769" prints before every "Sensor: accelerometer enabled" line, and both
+## come from the emulation thread, so that order is real rather than two threads
+## interleaving in the log.
+##
+## One completed frame is the whole condition — retro_run has returned, so
+## whatever the core sets up on its first pass is up. Deliberately not a frame
+## COUNT: see _ensure_audio_bound, where elapsed frames stood in for a readiness
+## question and the two only agreed for cores that come up fast.
+func _ensure_port_devices_bound() -> void:
+	if _port_devices_settled or not is_powered_on:
+		return
+	if not is_instance_valid(_libretro) or _libretro.GetFrameCount() <= 0:
+		return
+	_port_devices_settled = true
+	_reannounce_port_devices()
 
 
 ## Re-apply every plugged pad's preferred pad type. Called when the option set
