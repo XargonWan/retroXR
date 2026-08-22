@@ -89,6 +89,7 @@ func _ready() -> void:
 
 	_test_reads_as_lightgun()
 	_test_core_device_id()
+	_test_light_gun_cards()
 	_test_pad_type_choice()
 	await _test_analog_mode_switch()
 	await _test_playstation_hardware()
@@ -194,6 +195,55 @@ func _test_core_device_id() -> void:
 	_eq("device/base type beats name", sys._core_device_id(DEVICE_LIGHTGUN, 0), 263)
 
 	sys.free()
+
+
+# ---------------------------------------------------------------------------
+# Which cards offer the light gun.
+# ---------------------------------------------------------------------------
+
+## The gun is offered per platform, so the table is a claim about hardware and
+## rots silently: nothing in the room fails when a console that never sold one
+## starts offering it, or when one that did stops. Both directions are asserted
+## for that reason -- a test that only checks the platforms in the list would
+## still pass if the row were appended to every card.
+func _test_light_gun_cards() -> void:
+	var with_gun: Array = ["nes", "super_nes", "master_system", "mega_drive",
+		"sega_cd", "sega_saturn", "dreamcast", "playstation", "playstation2",
+		"atari_2600", "atari_7800", "atari_8bit", "commodore_c64", "zx_spectrum",
+		"cpc", "3do", "cdi"]
+	var without_gun: Array = ["nintendo_64", "gamecube", "wii", "virtual_boy",
+		"game_boy", "game_boy_advance", "neogeo", "atari_5200", "colecovision",
+		"intellivision", "vectrex", "pc_engine", "sg1000", "nds", "dos"]
+
+	for sysid: String in with_gun:
+		_ok("gun/%s offers one" % sysid, not _gun_row(sysid).is_empty())
+	for sysid: String in without_gun:
+		_ok("gun/%s does not" % sysid, _gun_row(sysid).is_empty())
+
+	# Once per card: it is appended by items_for, so a copy left in _PERIPHERALS
+	# would list it twice on that one platform and nowhere else.
+	var seen := 0
+	for item: Dictionary in SpawnCatalog.items_for("nes"):
+		if String(item.get("spawn", "")) == "light_gun":
+			seen += 1
+	_eq("gun/listed once", seen, 1)
+
+	# The row has to carry a token SpawnMenuController already handles, or the
+	# button is drawn and does nothing.
+	var row := _gun_row("super_nes")
+	_eq("gun/is a peripheral", String(row.get("kind", "")), "peripheral")
+	_eq("gun/token", SpawnCatalog.spawn_token("super_nes", row), "light_gun")
+	_ok("gun/the token's scene loads a LightGun",
+		(load("res://Scenes/Objects/peripherals/light_gun.tscn") as PackedScene)
+			.can_instantiate())
+
+
+## The gun's row on a platform's card, or {} if that card offers none.
+func _gun_row(sysid: String) -> Dictionary:
+	for item: Dictionary in SpawnCatalog.items_for(sysid):
+		if String(item.get("spawn", "")) == "light_gun":
+			return item
+	return {}
 
 
 # ---------------------------------------------------------------------------

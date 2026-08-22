@@ -189,6 +189,25 @@ const _LINK_LEADS: Dictionary = {
 }
 
 
+## The gun, offered on the platforms that sold one. One prop rather than a row per
+## card because RetroXR models no Super Scope and no Light Phaser -- it is the
+## generic stand-in, the same one the Controllers tab offers, so it is labelled
+## for what it spawns rather than for the gun a given console shipped.
+##
+## Listed is hardware that really existed for the platform: the Zapper, the Super
+## Scope, the Light Phaser, the Menacer and the Justifier, the Saturn's Stunner,
+## the GunCon, Atari's XG-1, the Magnum Light Phaser on the three home computers
+## it was sold for, the 3DO's Gamegun and the CD-i's Peacekeeper. A console that
+## never had one does not get the row, so the card stays a hardware fact.
+const _LIGHT_GUN: Dictionary = {"kind": "peripheral", "label": "Light Gun",
+	"spawn": "light_gun"}
+const _LIGHT_GUN_PLATFORMS: Array = [
+	"nes", "super_nes", "master_system", "mega_drive", "sega_cd", "sega_saturn",
+	"dreamcast", "playstation", "playstation2", "atari_2600", "atari_7800",
+	"atari_8bit", "commodore_c64", "zx_spectrum", "cpc", "3do", "cdi",
+]
+
+
 const _TRS_KIT: Array = [
 	{"kind": "peripheral", "label": "Speakers", "spawn": "speaker_pair"},
 	{"kind": "peripheral", "label": "3.5 mm Cable", "spawn": "trs_cable"},
@@ -233,6 +252,9 @@ static func items_for(systemid: String, _system_name: String = "") -> Array:
 			"model_id": SystemModelRegistry.PLACEHOLDER_ID})
 	items.append_array(imported)
 	items.append_array((_PERIPHERALS.get(systemid, []) as Array).duplicate(true))
+	# With the peripherals rather than the leads below: it is something you hold.
+	if _LIGHT_GUN_PLATFORMS.has(systemid):
+		items.append(_LIGHT_GUN.duplicate())
 	if _LINK_LEADS.has(systemid):
 		items.append((_LINK_LEADS[systemid] as Dictionary).duplicate())
 	if _GC_GBA_PLATFORMS.has(systemid):
