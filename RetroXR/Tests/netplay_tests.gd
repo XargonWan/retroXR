@@ -822,6 +822,7 @@ func _test_join() -> void:
 	_ok(await _until(func() -> bool: return w.host_np.is_running()),
 		"join/a game is running to join")
 	await _await_frames(60)
+	w.host_sys.lib.save_size = NetplaySession.STATE_CHUNK_SIZE * 2 + 123
 
 	# A third player arrives mid-game. The host stalls everyone, ships a
 	# savestate, and resumes once the newcomer has loaded it.
@@ -839,6 +840,8 @@ func _test_join() -> void:
 	_ok(jsys.started, "join/having started a core of its own")
 	_eq(jsys.started_core, "fceumm", "join/the host's core, again")
 	_ok(jsys.lib.loaded_state, "join/from the host's savestate rather than from boot")
+	_eq(jsys.lib.loaded_state_size, NetplaySession.STATE_CHUNK_SIZE * 2 + 123,
+		"join/a multi-chunk state arrives complete")
 	_ok(jsys.lib.GetFrameCount() > 0, "join/at the frame the game had reached")
 	_ok(await _until(func() -> bool: return not w.host_np._join_paused),
 		"join/and the pipeline is running again for everyone")
@@ -903,6 +906,90 @@ func _test_join() -> void:
 	w.host_nm.netplay_stop("done")
 	await _await_frames(10)
 	broken.get_parent().queue_free()
+	_free(w)
+	await _await_frames(5)
+
+	# A core that never answers save must not hold every existing player at the
+	# frozen boundary forever. Drive the deadline directly so the test stays fast.
+	w = await _pair()
+	w.host_nm.netplay_start_host(w.host_sys, "fceumm", "MD5", {0: 1, 1: w.client_id}, 3, 0)
+	await _until(func() -> bool: return w.host_np.is_running())
+	w.host_sys.lib.save_hangs = true
+	var hung := _branch("JH")
+	var hsys := MockSys.new()
+	hsys.name = "Sys"
+	hung.add_child(hsys)
+	hung._netplay.system_override = hsys
+	hung.join_game("::1", PORT)
+	_ok(await _until(func() -> bool:
+		return w.host_np._join_paused and not w.host_np._joining.is_empty(), 900),
+		"join/a non-answering save reaches the bounded capture phase")
+	var hung_id := _other_id(w.host_nm, w.client_id)
+	w.host_np._join_deadlines[hung_id] = 0
+	w.host_np._check_join_timeouts()
+	_ok(not w.host_np._join_paused and w.host_np._spectators.has(hung_id),
+		"join/a save timeout releases the game and demotes only the newcomer")
+	w.host_nm.netplay_stop("done")
+	await _await_frames(5)
+	hung.get_parent().queue_free()
+	_free(w)
+	await _await_frames(5)
+
+	# A peer whose core rejects the received state cleans the partially started
+	# core up before remaining a spectator.
+	w = await _pair()
+	w.host_nm.netplay_start_host(w.host_sys, "fceumm", "MD5", {0: 1, 1: w.client_id}, 3, 0)
+	await _until(func() -> bool: return w.host_np.is_running())
+	var load_bad := _branch("JL")
+	var lsys := MockSys.new()
+	lsys.name = "Sys"
+	lsys.lib.load_fails = true
+	load_bad.add_child(lsys)
+	var lnp: NetplaySession = load_bad._netplay
+	lnp.system_override = lsys
+	load_bad.join_game("::1", PORT)
+	_ok(await _until(func() -> bool:
+		var newcomer := _other_id(w.host_nm, w.client_id)
+		return newcomer > 0 and w.host_np._spectators.has(newcomer), 900),
+		"join/a rejected state leaves the newcomer as a spectator")
+	_ok(lsys.stopped and lnp._group.is_empty(),
+		"join/and tears down its partially started core and session state")
+	w.host_nm.netplay_stop("done")
+	await _await_frames(5)
+	load_bad.get_parent().queue_free()
+	_free(w)
+	await _await_frames(5)
+
+	# The receiver has its own deadline after the stream, covering a core that
+	# accepts the command but never reports whether the state loaded.
+	w = await _pair()
+	w.host_nm.netplay_start_host(w.host_sys, "fceumm", "MD5", {0: 1, 1: w.client_id}, 3, 0)
+	await _until(func() -> bool: return w.host_np.is_running())
+	var load_hung := _branch("JLT")
+	var lhsys := MockSys.new()
+	lhsys.name = "Sys"
+	lhsys.lib.load_hangs = true
+	load_hung.add_child(lhsys)
+	var lh_np: NetplaySession = load_hung._netplay
+	lh_np.system_override = lhsys
+	load_hung.join_game("::1", PORT)
+	_ok(await _until(func() -> bool:
+		return lhsys.started and lh_np._join_receive_deadline > 0 \
+			and lh_np._await_core.is_empty(), 900),
+		"join/a non-answering load reaches the bounded load phase")
+	# Zero means disabled in normal operation; use an already-expired positive
+	# value to exercise the timeout branch.
+	lh_np._join_receive_deadline = 1
+	lh_np._check_join_timeouts()
+	_ok(lhsys.stopped, "join/a load timeout stops the partially loaded core")
+	_ok(lh_np._group.is_empty(), "join/a load timeout clears the local session state")
+	_ok(await _until(func() -> bool:
+		var newcomer := _other_id(w.host_nm, w.client_id)
+		return newcomer > 0 and w.host_np._spectators.has(newcomer), 900),
+		"join/and tells the host to resume without it")
+	w.host_nm.netplay_stop("done")
+	await _await_frames(5)
+	load_hung.get_parent().queue_free()
 	_free(w)
 
 
@@ -1138,6 +1225,8 @@ func _test_link() -> void:
 		{0: 1, 4: w.client_id}, 3, 0)
 	_ok(await _until(func() -> bool: return not firmware_stops.is_empty()),
 		"link/different BIOS bytes refuse the session")
+	_ok(w.client_np._group.is_empty() and w.client_sys.stopped and w.client_far.stopped,
+		"link/the rejected peer clears prepared media and partial session state")
 	_free(w)
 
 	# Empty-image BIOS boots (for example a PlayStation's no-disc screen) use a
@@ -1362,7 +1451,12 @@ class MockLib extends Node:
 	var frames_at_identity := -1
 	var desync := false
 	var loaded_state := false
+	var loaded_state_size := 0
 	var save_fails := false
+	var save_hangs := false
+	var load_fails := false
+	var load_hangs := false
+	var save_size := 8
 	var link_peers: Dictionary = {}
 	## Frames at which a scheduled link op landed on this core, appended in
 	## order. A case hands in its own array so it can watch a single window.
@@ -1454,19 +1548,28 @@ class MockLib extends Node:
 			netplay_crc.emit(_count, (_acc ^ 0xABCDE) & 0x3FFFFFFF if desync else _acc)
 
 	func RequestSaveState() -> void:
+		if save_hangs:
+			return
 		if save_fails:
 			savestate_ready.emit(PackedByteArray(), _count)
 			return
 		var d := PackedByteArray()
-		d.resize(8)
-		d.encode_s64(0, _acc)
+		d.resize(save_size)
+		if d.size() >= 8:
+			d.encode_s64(0, _acc)
 		savestate_ready.emit(d, _count)
 
 	func RequestLoadState(data: PackedByteArray, frame: int) -> void:
+		if load_hangs:
+			return
+		if load_fails:
+			savestate_loaded.emit(false)
+			return
 		_count = frame
 		_acc = data.decode_s64(0) if data.size() >= 8 else frame
 		_enabled = true
 		loaded_state = true
+		loaded_state_size = data.size()
 		savestate_loaded.emit(true)
 
 

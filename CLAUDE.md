@@ -585,7 +585,7 @@ path is covered by the `_fast` ROMs instead.
 
 ### 2f. Netplay — a suite, and the one thing it cannot cover
 
-`RetroXR/Tests/netplay_tests.tscn` is 264 cases over the whole lockstep stack,
+`RetroXR/Tests/netplay_tests.tscn` is 274 cases over the whole lockstep stack,
 headless, ~60 s, exits non-zero. Groups: `cores/` (the determinism allowlist),
 `identity/` (which core builds may play each other), `wire/` (every packed
 block's round trip, including per-port accelerometer, gyro, IR/touch and
@@ -716,6 +716,15 @@ plumbing with mock cores, but mGBA is not yet in `NetplayCores`: a real
 single-pak netplay run still needs a payload-carrying game ROM and determinism
 vetting, which the user does not plan to obtain, so leave that validation noted
 as outstanding rather than enabling the core on inference.
+
+Late-join state is a bounded stream, not one RPC: 64 KiB reliable chunks, eight
+in flight, cumulative acknowledgements, SHA-256 per payload, and a 256 MiB total
+cap. The metadata is a chunked payload too, because it contains SRAM and the
+external link-bus queues. Capture, transfer, core startup and state load all have
+progress deadlines; a timeout tears the newcomer down, makes it a spectator and
+releases the existing players. Firmware matching hashes every path declared by
+the core (including directory contents), not only the files used to draw a BIOS
+screen.
 
 Two things this had to get right, and both are the same rule:
 

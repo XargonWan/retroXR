@@ -25,10 +25,11 @@ const GLPROBE_EXTERNAL_CFG := "/sdcard/Android/data/com.xenu.retroxr/files/glpro
 ## levers, knobs and sliders). 7 adds deterministic reset plus explicit TV
 ## source/channel/aspect state. 8 adds per-port accel/gyro/pointer frames. 9
 ## carries the external link-bus snapshot needed by linked late join. 10 makes
-## each machine's ROM/empty-media/no-content boot mode explicit. These
+## each machine's ROM/empty-media/no-content boot mode explicit. 11 chunks and
+## verifies late-join savestates instead of putting them in one RPC. These
 ## wire layouts are intentionally refused across versions:
 ## accepting an old peer would look connected while feeding different cores.
-const PROTOCOL_VERSION := 10
+const PROTOCOL_VERSION := 11
 const POSE_INTERVAL := 1.0 / 20.0
 
 # ENet channels

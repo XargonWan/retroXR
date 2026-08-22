@@ -2367,14 +2367,14 @@ func net_boot_spec(core: String) -> Dictionary:
 		var splash := BiosBoot.splash_options(core, systemid)
 		if not splash.is_empty():
 			game_boot["boot_options"] = splash
-			game_boot["firmware"] = _net_firmware_signature(core)
+		_add_net_firmware_signature(game_boot, core)
 		return game_boot
 	if not BiosBoot.can_boot_empty(core, systemid):
 		return {}
 	var empty_boot := {
 		"boot_options": BiosBoot.empty_boot_options(core, systemid),
-		"firmware": _net_firmware_signature(core),
 	}
+	_add_net_firmware_signature(empty_boot, core)
 	if BiosBoot.boots_with_no_content(core, systemid):
 		empty_boot["mode"] = "no_content"
 	else:
@@ -2383,17 +2383,26 @@ func net_boot_spec(core: String) -> Dictionary:
 	return empty_boot
 
 
-## Fingerprint every candidate boot ROM (or every file under a declared BIOS
-## directory). Optional regional alternatives are included too: a core in
-## "auto" mode may select a different one, so equal presence is not enough.
+func _add_net_firmware_signature(spec: Dictionary, core: String) -> void:
+	if not FirmwareRequirements.for_core(core).is_empty():
+		spec["firmware"] = _net_firmware_signature(core)
+
+
+## Fingerprint every firmware path declared by the core, including optional
+## files and directory contents. A required DSP ROM or font can affect a game
+## just as much as the boot ROM; limiting this to BIOS-screen paths lets peers
+## enter gameplay with different deterministic inputs.
 func _net_firmware_signature(core: String) -> String:
 	var rows: Array[String] = []
-	for relative: String in BiosBoot.boot_rom_paths(core, systemid):
+	for requirement: Dictionary in FirmwareRequirements.for_core(core):
+		var relative := str(requirement.get("path", ""))
+		if relative.is_empty():
+			continue
 		var dest := FirmwareRequirements.destination(core, relative)
 		if DirAccess.dir_exists_absolute(dest):
 			_append_net_firmware_dir(dest, relative, rows)
 		elif FileAccess.file_exists(dest):
-			rows.append("%s=%s" % [relative, FileAccess.get_md5(dest).to_lower()])
+			rows.append("%s=%s" % [relative, NetFileTransfer.hash_of(dest)])
 		else:
 			rows.append("%s=<missing>" % relative)
 	rows.sort()
@@ -2414,7 +2423,7 @@ func _append_net_firmware_dir(root: String, relative: String,
 		if dir.current_is_dir():
 			_append_net_firmware_dir(full, child, rows)
 		else:
-			rows.append("%s=%s" % [child, FileAccess.get_md5(full).to_lower()])
+			rows.append("%s=%s" % [child, NetFileTransfer.hash_of(full)])
 		name = dir.get_next()
 	dir.list_dir_end()
 

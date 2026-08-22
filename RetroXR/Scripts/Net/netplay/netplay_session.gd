@@ -43,6 +43,11 @@ const DISK_LEAD := 8            # frames ahead a disc eject/swap is scheduled
 const RESET_LEAD := 8           # frames ahead a front-panel reset is scheduled
 const LINK_LEAD := 8            # frames ahead a link plug/pull is scheduled
 const OP_ACK_TIMEOUT_MS := 5000 # reliable control op accepted by every peer
+const JOIN_TIMEOUT_MS := 15000  # progress deadline for boundary/save/transfer/load
+const STATE_CHUNK_SIZE := 65536 # reliable state stream; never one giant RPC
+const STATE_CHUNK_WINDOW := 8   # chunks queued before a cumulative ack
+const STATE_ACK_EVERY := 4
+const MAX_JOIN_STATE_BYTES := 256 * 1024 * 1024
 ## Ports per machine, and the stride of a global port index. A session over a
 ## cabled pair has two machines' pads in one frame, so a port is identified by
 ## machine * PORTS_PER_MACHINE + port rather than by port alone.
@@ -78,9 +83,9 @@ var _libs: Array = []
 var _system: Object = null
 var _lib: Object = null
 var _group_net_ids: PackedInt32Array = PackedInt32Array()
-# One launch description per machine: {core, rom_md5, options, sram}.  A linked
-# session can be heterogeneous (GameCube + GBA), and even two identical
-# consoles normally carry different cartridges and battery saves.
+# One launch description per machine: core, boot mode/media identity, options,
+# firmware fingerprint and SRAM. A linked session can be heterogeneous
+# (GameCube + GBA), and even identical consoles may boot differently.
 var _machine_specs: Array = []
 var _core := ""
 var _delay := 3
@@ -117,6 +122,13 @@ var _join_frame := -1
 var _join_loaded := 0
 var _join_capture_pending := false
 var _join_capture_frame := -1
+var _join_serial := 0
+## Host: peer -> chunk-stream cursor/state. Client: one incoming snapshot.
+var _join_transfers: Dictionary = {}
+var _join_deadlines: Dictionary = {}
+var _incoming_join: Dictionary = {}
+var _join_receive_deadline := 0
+var _await_join_serial := -1
 
 # Core build identity (library_name/library_version/api_version/serialize_size).
 # The host's is the reference every peer must match; a peer's own is what it
@@ -281,14 +293,13 @@ func _np_start(group_net_ids: PackedInt32Array, machine_specs: Array,
 	# Every machine on the bus, not just the one the host anchored to: a peer
 	# missing the far end would run half a cable.
 	if not _adopt_group(group_net_ids):
-		_np_ready_fail.rpc_id(1, "cannot resolve every machine in the game")
+		_fail_local_join("cannot resolve every machine in the game")
 		return
 	if not _prepare_local_media():
-		_np_ready_fail.rpc_id(1, "cannot reproduce one machine's boot media")
+		_fail_local_join("cannot reproduce one machine's boot media")
 		return
 	if not _cold_start_local(start_frame):
-		_np_ready_fail.rpc_id(1, "cannot start one of the linked cores")
-		_stop_local("cannot start one of the linked cores")
+		_fail_local_join("cannot start one of the linked cores")
 		return
 	_begin_await("cold")
 
@@ -603,15 +614,18 @@ func _poll_core_ready() -> void:
 
 	if kind == "join":
 		if not _restore_link_states(_await_link_states):
-			_np_ready_fail.rpc_id(1, "linked bus state could not be restored")
-			_stop_local("linked bus state could not be restored")
+			_fail_local_join("linked bus state could not be restored")
 			return
 		_await_link_states = []
+		if _await_states.size() != _libs.size():
+			_fail_local_join("late-join state count does not match the machine group")
+			return
 		_join_loaded = 0
 		for i in range(_libs.size()):
 			var lib: Object = _libs[i]
 			if lib == null or not lib.has_method("RequestLoadState"):
-				continue
+				_fail_local_join("machine %d cannot load state" % i)
+				return
 			if not lib.savestate_loaded.is_connected(_on_join_loaded):
 				lib.savestate_loaded.connect(_on_join_loaded)
 			var state: PackedByteArray = PackedByteArray()
@@ -619,6 +633,8 @@ func _poll_core_ready() -> void:
 				state = _await_states[i]
 			lib.RequestLoadState(state, _await_state_frame)
 		_await_states = []
+		_join_receive_deadline = _now() + JOIN_TIMEOUT_MS
+		_np_state_progress.rpc_id(1, _await_join_serial)
 		return
 
 	_np_ready.rpc_id(1)
@@ -762,7 +778,7 @@ func _np_stop(reason: String) -> void:
 
 
 func _stop_local(reason: String) -> void:
-	if not is_active() and _system == null:
+	if not is_active() and _system == null and _machine_specs.is_empty():
 		return
 	_running = false
 	_join_paused = false
@@ -782,6 +798,11 @@ func _stop_local(reason: String) -> void:
 	_join_loaded = 0
 	_join_capture_pending = false
 	_join_capture_frame = -1
+	_join_transfers.clear()
+	_join_deadlines.clear()
+	_incoming_join.clear()
+	_join_receive_deadline = 0
+	_await_join_serial = -1
 	_host_identities.clear()
 	_local_identities.clear()
 	for i in range(_libs.size()):
@@ -845,6 +866,11 @@ func _reset_runtime(start_frame: int) -> void:
 	_joining.clear()
 	_join_capture_pending = false
 	_join_capture_frame = -1
+	_join_transfers.clear()
+	_join_deadlines.clear()
+	_incoming_join.clear()
+	_join_receive_deadline = 0
+	_await_join_serial = -1
 	_join_link_states.clear()
 	_await_link_states.clear()
 	_pending.clear()
@@ -1532,6 +1558,7 @@ func _is_linked(system: Object) -> bool:
 # ── Per-frame drive ───────────────────────────────────────────────────────────
 
 func _process(_delta: float) -> void:
+	_check_join_timeouts()
 	if not _await_core.is_empty():
 		_poll_core_ready()
 	if not _running or _lib == null:
@@ -1919,6 +1946,7 @@ func on_peer_joined(peer_id: int) -> void:
 
 func _begin_join_capture(peer_id: int) -> void:
 	_joining[peer_id] = true
+	_join_deadlines[peer_id] = _now() + JOIN_TIMEOUT_MS
 	_ready_peers.erase(peer_id)
 	_join_paused = true      # freeze the pipeline — everyone stalls at the gate
 	_join_capture_pending = true
@@ -1956,6 +1984,8 @@ func _poll_join_capture() -> void:
 
 
 func _on_savestate_for_join(data: PackedByteArray, frame: int, machine_index: int) -> void:
+	for peer_id: int in _joining:
+		_join_deadlines[peer_id] = _now() + JOIN_TIMEOUT_MS
 	var lib: Object = _libs[machine_index] if machine_index < _libs.size() else null
 	if lib != null:
 		var handler := _on_savestate_for_join.bind(machine_index)
@@ -1981,9 +2011,196 @@ func _on_savestate_for_join(data: PackedByteArray, frame: int, machine_index: in
 		return
 	_join_link_states = link_states
 	for peer_id: int in _joining.keys():
-		_np_savestate.rpc_id(peer_id, _group_net_ids, _machine_specs, _owners,
-			_delay, _join_states.duplicate(), _join_frame, _rollback,
-			_host_identities, _join_link_states.duplicate(true))
+		_begin_join_transfer(peer_id)
+
+
+func _state_hash(data: PackedByteArray) -> PackedByteArray:
+	var context := HashingContext.new()
+	context.start(HashingContext.HASH_SHA256)
+	context.update(data)
+	return context.finish()
+
+
+func _begin_join_transfer(peer_id: int) -> void:
+	_join_serial += 1
+	var metadata := {
+		"serial": _join_serial,
+		"group_net_ids": _group_net_ids,
+		"machine_specs": _machine_specs,
+		"owners": _owners,
+		"delay": _delay,
+		"frame": _join_frame,
+		"rollback": _rollback,
+		"identities": _host_identities,
+		"link_states": _join_link_states,
+	}
+	var payloads: Array = [var_to_bytes(metadata)]
+	payloads.append_array(_join_states)
+	var sizes := PackedInt64Array()
+	var hashes: Array = []
+	var total_chunks := 0
+	for payload: PackedByteArray in payloads:
+		sizes.append(payload.size())
+		hashes.append(_state_hash(payload))
+		total_chunks += ceili(float(payload.size()) / STATE_CHUNK_SIZE)
+	var transfer := {
+		"serial": _join_serial,
+		"payloads": payloads,
+		"machine": 0,
+		"offset": 0,
+		"sent": 0,
+		"acked": 0,
+		"total": total_chunks,
+		"end_sent": false,
+	}
+	_join_transfers[peer_id] = transfer
+	_join_deadlines[peer_id] = _now() + JOIN_TIMEOUT_MS
+	_np_state_begin.rpc_id(peer_id, _join_serial, sizes, hashes)
+	_pump_join_transfer(peer_id)
+
+
+func _pump_join_transfer(peer_id: int) -> void:
+	var transfer: Dictionary = _join_transfers.get(peer_id, {})
+	if transfer.is_empty() or bool(transfer.get("end_sent", false)):
+		return
+	while int(transfer["sent"]) - int(transfer["acked"]) < STATE_CHUNK_WINDOW \
+			and int(transfer["machine"]) < (transfer["payloads"] as Array).size():
+		var states: Array = transfer["payloads"]
+		var machine := int(transfer["machine"])
+		var state: PackedByteArray = states[machine]
+		var offset := int(transfer["offset"])
+		if offset >= state.size():
+			transfer["machine"] = machine + 1
+			transfer["offset"] = 0
+			continue
+		var end := mini(offset + STATE_CHUNK_SIZE, state.size())
+		var ordinal := int(transfer["sent"])
+		_np_state_chunk.rpc_id(peer_id, int(transfer["serial"]), ordinal,
+			machine, offset, state.slice(offset, end))
+		transfer["sent"] = ordinal + 1
+		transfer["offset"] = end
+	if int(transfer["sent"]) >= int(transfer["total"]) \
+			and int(transfer["acked"]) >= int(transfer["total"]):
+		transfer["end_sent"] = true
+		_np_state_end.rpc_id(peer_id, int(transfer["serial"]))
+
+
+@rpc("authority", "call_remote", "reliable", CH_CONTROL)
+func _np_state_begin(serial: int, state_sizes: PackedInt64Array,
+		state_hashes: Array) -> void:
+	if not _incoming_join.is_empty() or state_sizes.is_empty() \
+			or state_sizes.size() != state_hashes.size():
+		_fail_local_join("invalid late-join state manifest")
+		return
+	var states: Array = []
+	states.resize(state_sizes.size())
+	var total_bytes := 0
+	for i in range(states.size()):
+		total_bytes += int(state_sizes[i])
+		if state_sizes[i] <= 0 or total_bytes > MAX_JOIN_STATE_BYTES \
+				or not (state_hashes[i] is PackedByteArray) \
+				or (state_hashes[i] as PackedByteArray).size() != 32:
+			_fail_local_join("invalid late-join state size")
+			return
+		states[i] = PackedByteArray()
+	_incoming_join = {
+		"serial": serial,
+		"sizes": state_sizes,
+		"hashes": state_hashes.duplicate(true),
+		"payloads": states,
+		"machine": 0,
+		"offset": 0,
+		"received": 0,
+	}
+	_join_receive_deadline = _now() + JOIN_TIMEOUT_MS
+
+
+@rpc("authority", "call_remote", "reliable", CH_CONTROL)
+func _np_state_chunk(serial: int, ordinal: int, machine: int, offset: int,
+		data: PackedByteArray) -> void:
+	if _incoming_join.is_empty() or int(_incoming_join.get("serial", -1)) != serial \
+			or ordinal != int(_incoming_join.get("received", -1)) \
+			or machine != int(_incoming_join.get("machine", -1)) \
+			or offset != int(_incoming_join.get("offset", -1)) \
+			or data.is_empty() or data.size() > STATE_CHUNK_SIZE:
+		_fail_local_join("invalid late-join state chunk")
+		return
+	var sizes: PackedInt64Array = _incoming_join["sizes"]
+	if machine < 0 or machine >= sizes.size() or offset + data.size() > sizes[machine]:
+		_fail_local_join("late-join state chunk exceeds its manifest")
+		return
+	var states: Array = _incoming_join["payloads"]
+	var state: PackedByteArray = states[machine]
+	state.append_array(data)
+	states[machine] = state
+	_incoming_join["received"] = ordinal + 1
+	_incoming_join["offset"] = offset + data.size()
+	if int(_incoming_join["offset"]) == sizes[machine]:
+		_incoming_join["machine"] = machine + 1
+		_incoming_join["offset"] = 0
+	_join_receive_deadline = _now() + JOIN_TIMEOUT_MS
+	var total_received := int(_incoming_join["received"])
+	if total_received % STATE_ACK_EVERY == 0 \
+			or int(_incoming_join["machine"]) == sizes.size():
+		_np_state_ack.rpc_id(1, serial, total_received)
+
+
+@rpc("any_peer", "call_remote", "reliable", CH_CONTROL)
+func _np_state_ack(serial: int, received: int) -> void:
+	if not _nm.is_host():
+		return
+	var peer_id := multiplayer.get_remote_sender_id()
+	var transfer: Dictionary = _join_transfers.get(peer_id, {})
+	if transfer.is_empty() or int(transfer.get("serial", -1)) != serial \
+			or received < int(transfer.get("acked", 0)) \
+			or received > int(transfer.get("sent", 0)):
+		return
+	transfer["acked"] = received
+	_join_deadlines[peer_id] = _now() + JOIN_TIMEOUT_MS
+	_pump_join_transfer(peer_id)
+
+
+@rpc("authority", "call_remote", "reliable", CH_CONTROL)
+func _np_state_end(serial: int) -> void:
+	if _incoming_join.is_empty() or int(_incoming_join.get("serial", -1)) != serial:
+		_fail_local_join("late-join state stream ended unexpectedly")
+		return
+	var sizes: PackedInt64Array = _incoming_join["sizes"]
+	var hashes: Array = _incoming_join["hashes"]
+	var states: Array = _incoming_join["payloads"]
+	for i in range(states.size()):
+		var state: PackedByteArray = states[i]
+		if state.size() != sizes[i] or _state_hash(state) != (hashes[i] as PackedByteArray):
+			_fail_local_join("late-join state failed verification")
+			return
+	var decoded: Variant = bytes_to_var(states[0])
+	if not (decoded is Dictionary):
+		_fail_local_join("late-join metadata could not be decoded")
+		return
+	var snapshot: Dictionary = decoded
+	if int(snapshot.get("serial", -1)) != serial:
+		_fail_local_join("late-join metadata serial mismatch")
+		return
+	var core_states := states.slice(1)
+	if core_states.is_empty() \
+			or core_states.size() != (snapshot.get("machine_specs", []) as Array).size() \
+			or core_states.size() != (snapshot.get("group_net_ids", PackedInt32Array()) as PackedInt32Array).size():
+		_fail_local_join("late-join metadata does not match its core states")
+		return
+	_incoming_join = {}
+	_join_receive_deadline = 0
+	_np_state_progress.rpc_id(1, serial)
+	_accept_join_snapshot(snapshot, core_states)
+
+
+@rpc("any_peer", "call_remote", "reliable", CH_CONTROL)
+func _np_state_progress(serial: int) -> void:
+	if not _nm.is_host():
+		return
+	var peer_id := multiplayer.get_remote_sender_id()
+	var transfer: Dictionary = _join_transfers.get(peer_id, {})
+	if not transfer.is_empty() and int(transfer.get("serial", -1)) == serial:
+		_join_deadlines[peer_id] = _now() + JOIN_TIMEOUT_MS
 
 
 func _link_bus_descriptors() -> Variant:
@@ -2069,12 +2286,43 @@ func _fail_join_capture(reason: String) -> void:
 	_join_link_states.clear()
 	_join_capture_pending = false
 	_join_capture_frame = -1
-	for peer_id: int in _joining.keys():
-		_spectators[peer_id] = true
-		_np_join_refused.rpc_id(peer_id, reason)
-	_joining.clear()
-	_join_paused = false
-	_start_next_deferred_join()
+	for peer_id: int in _joining.keys().duplicate():
+		_fail_join_peer(peer_id, reason)
+
+
+func _fail_join_peer(peer_id: int, reason: String) -> void:
+	_spectators[peer_id] = true
+	_join_transfers.erase(peer_id)
+	_join_deadlines.erase(peer_id)
+	_joining.erase(peer_id)
+	_np_join_refused.rpc_id(peer_id, reason)
+	if _joining.is_empty():
+		_join_paused = false
+		_join_capture_pending = false
+		_join_capture_frame = -1
+		_join_states.clear()
+		_join_link_states.clear()
+		_last_progress_ms = _now()
+		_start_next_deferred_join()
+
+
+func _fail_local_join(reason: String) -> void:
+	_incoming_join.clear()
+	_join_receive_deadline = 0
+	_await_join_serial = -1
+	if multiplayer != null and multiplayer.multiplayer_peer != null:
+		_np_ready_fail.rpc_id(1, reason)
+	_stop_local(reason)
+
+
+func _check_join_timeouts() -> void:
+	var now := _now()
+	if _nm != null and _nm.is_host():
+		for peer_id: int in _join_deadlines.keys().duplicate():
+			if now >= int(_join_deadlines[peer_id]):
+				_fail_join_peer(peer_id, "late-join state transfer timed out")
+	elif _join_receive_deadline > 0 and now >= _join_receive_deadline:
+		_fail_local_join("late-join state transfer timed out")
 
 
 func _disconnect_join_save_handlers() -> void:
@@ -2089,30 +2337,33 @@ func _disconnect_join_save_handlers() -> void:
 @rpc("authority", "call_remote", "reliable", CH_CONTROL)
 func _np_join_refused(reason: String) -> void:
 	print("[Netplay] remaining spectator: %s" % reason)
+	_incoming_join.clear()
+	_join_receive_deadline = 0
+	_await_join_serial = -1
+	if _system != null or not _libs.is_empty():
+		_stop_local(reason)
 	if _nm.has_signal("status_changed"):
 		_nm.status_changed.emit(reason)
 
 
-@rpc("authority", "call_remote", "reliable", CH_CONTROL)
-func _np_savestate(group_net_ids: PackedInt32Array, machine_specs: Array,
-		owners: Dictionary, delay: int, states: Array, frame: int,
-		rollback := false, host_identities: Array = [], link_states: Array = []) -> void:
-	_machine_specs = machine_specs.duplicate(true)
+func _accept_join_snapshot(snapshot: Dictionary, states: Array) -> void:
+	var group_net_ids: PackedInt32Array = snapshot["group_net_ids"]
+	_machine_specs = (snapshot["machine_specs"] as Array).duplicate(true)
 	_core = str(_machine_specs[0].get("core", "")) if not _machine_specs.is_empty() else ""
-	_delay = delay
-	_rollback = rollback
-	_host_identities = host_identities.duplicate(true)
+	_delay = int(snapshot["delay"])
+	_rollback = bool(snapshot["rollback"])
+	_host_identities = (snapshot["identities"] as Array).duplicate(true)
 	_local_identities.clear()
-	_set_owners(owners)
+	_set_owners(snapshot["owners"] as Dictionary)
 	if not _adopt_group(group_net_ids):
-		_np_ready_fail.rpc_id(1, "cannot resolve every machine in the game")
+		_fail_local_join("cannot resolve every machine in the game")
 		return
 	if not _prepare_local_media():
-		_np_ready_fail.rpc_id(1, "cannot reproduce one machine's boot media")
+		_fail_local_join("cannot reproduce one machine's boot media")
 		return
+	var frame := int(snapshot["frame"])
 	if not _cold_start_local(frame):
-		_np_ready_fail.rpc_id(1, "cannot start one of the linked cores")
-		_stop_local("cannot start one of the linked cores")
+		_fail_local_join("cannot start one of the linked cores")
 		return
 	# The state cannot be loaded into a core that has not finished loading its
 	# content, and a state from a different build cannot be loaded at all — so
@@ -2120,7 +2371,8 @@ func _np_savestate(group_net_ids: PackedInt32Array, machine_specs: Array,
 	# _poll_core_ready.
 	_await_states = states.duplicate()
 	_await_state_frame = frame
-	_await_link_states = link_states.duplicate(true)
+	_await_link_states = (snapshot["link_states"] as Array).duplicate(true)
+	_await_join_serial = int(snapshot["serial"])
 	_begin_await("join")
 
 
@@ -2131,12 +2383,15 @@ func _on_join_loaded(ok: bool) -> void:
 	if not ok:
 		push_warning("[Netplay] late-join load failed")
 		_disconnect_join_loaded()
-		_np_ready_fail.rpc_id(1, "savestate load failed")
+		_fail_local_join("savestate load failed")
 		return
 	_join_loaded += 1
+	_join_receive_deadline = _now() + JOIN_TIMEOUT_MS
 	if _join_loaded < _libs.size():
 		return
 	_disconnect_join_loaded()
+	_join_receive_deadline = 0
+	_await_join_serial = -1
 	_begin_running()
 	_np_ready.rpc_id(1)
 
@@ -2151,8 +2406,11 @@ func _disconnect_join_loaded() -> void:
 # Host: a late joiner reported ready → resume the pipeline.
 func _resume_after_join(peer_id: int) -> void:
 	_joining.erase(peer_id)
+	_join_transfers.erase(peer_id)
+	_join_deadlines.erase(peer_id)
 	if _joining.is_empty():
 		_join_paused = false
+		_join_capture_pending = false
 		_join_capture_frame = -1
 		_join_states.clear()
 		_join_link_states.clear()
@@ -2180,6 +2438,8 @@ func on_peer_left(peer_id: int) -> void:
 		return
 	_ready_peers.erase(peer_id)
 	_joining.erase(peer_id)
+	_join_transfers.erase(peer_id)
+	_join_deadlines.erase(peer_id)
 	_strikes.erase(peer_id)
 	_spectators.erase(peer_id)
 	_deferred_joiners.erase(peer_id)
@@ -2203,6 +2463,10 @@ func on_peer_left(peer_id: int) -> void:
 			_reset_deadlines.erase(serial)
 	if _joining.is_empty():
 		_join_paused = false
+		_join_capture_pending = false
+		_join_capture_frame = -1
+		_join_states.clear()
+		_join_link_states.clear()
 	for port: int in _owners:
 		if int(_owners[port]) == peer_id:
 			stop("player left")
