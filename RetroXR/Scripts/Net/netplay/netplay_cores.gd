@@ -56,7 +56,7 @@ const CORES: Dictionary = {
 	"mgba": {
 		"verified": true,
 		"state_transfer": true,
-		"strategies": [Strategy.LOCKSTEP, Strategy.DETERMINISM],
+		"strategies": [Strategy.ROLLBACK, Strategy.LOCKSTEP, Strategy.DETERMINISM],
 		"cross_play": false,
 		"systems": ["game_boy_advance", "game_boy", "game_boy_color"],
 		"options": {},
@@ -82,7 +82,7 @@ const CORES: Dictionary = {
 	"snes9x": {
 		"verified": true,
 		"state_transfer": true,
-		"strategies": [Strategy.LOCKSTEP],
+		"strategies": [Strategy.ROLLBACK, Strategy.LOCKSTEP],
 		"cross_play": false,
 		"systems": ["super_nes"],
 		"options": {},
@@ -90,7 +90,7 @@ const CORES: Dictionary = {
 	"genesis_plus_gx": {
 		"verified": true,
 		"state_transfer": true,
-		"strategies": [Strategy.LOCKSTEP],
+		"strategies": [Strategy.ROLLBACK, Strategy.LOCKSTEP],
 		"cross_play": false,
 		"systems": ["megadrive", "genesis"],
 		"options": {},

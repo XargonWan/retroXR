@@ -179,11 +179,18 @@ func _test_cores() -> void:
 		"cores/an unverified core is vetted for nothing")
 	_ok(NetplayCores.strategies_for("nonesuch").is_empty(),
 		"cores/and so is an unknown one")
-	# snes9x was vetted for cold-start determinism and state transfer, and never
-	# measured for rollback. Verified is not a blanket yes: it earns the entry,
-	# and the entry says which strategies the evidence actually covers.
-	_eq(NetplayCores.strategies_for("snes9x"), [NetplayCores.Strategy.LOCKSTEP],
+	# Verified is not a blanket yes: it earns the entry, and the entry says which
+	# strategies the evidence actually covers. gambatte is the standing case --
+	# it reproduces perfectly from a cold start and cannot reload its own state,
+	# so lockstep is the only one of the three it can hold.
+	_eq(NetplayCores.strategies_for("gambatte"), [NetplayCores.Strategy.LOCKSTEP],
 		"cores/a core vetted for some strategies gets only those")
+	# And rollback is never offered without the state transfer it rewinds
+	# through, which is the pairing the two keys exist to keep honest.
+	for core: String in NetplayCores.CORES:
+		if NetplayCores.rollback_capable(core):
+			_ok(NetplayCores.state_transfer_capable(core),
+				"cores/%s cannot roll back without a state to rewind through" % core)
 	_ok(not NetplayCores.strategies_for("gambatte").has(NetplayCores.Strategy.ROLLBACK),
 		"cores/gambatte is not vetted for rollback")
 	_ok(NetplayCores.strategies_for("mgba").has(NetplayCores.Strategy.DETERMINISM),
@@ -1179,17 +1186,24 @@ func _test_join() -> void:
 	# answer; saying it OUT LOUD is the part that was missing. Standing in the
 	# room beside a cabinet that is visibly being played, with a blank screen and
 	# no explanation anywhere, is indistinguishable from the game being broken.
+	#
+	# Dolphin is the core this is written against, and it has to be: every other
+	# entry can now put a state on the wire, so gambatte -- which used to be the
+	# example -- would simply late-join and never reach this path. The debug
+	# override lets it start; it deliberately does NOT reach across into state
+	# transfer, which is exactly the combination needed here.
+	NetplayCores.debug_allow_unverified = true
 	var g := await _pair()
-	g.host_sys.machine_core = "gambatte"
-	g.client_sys.machine_core = "gambatte"
-	g.host_nm.netplay_start_host(g.host_sys, "gambatte", "MD5", {0: 1, 1: g.client_id}, 3, 0)
+	g.host_sys.machine_core = "dolphin"
+	g.client_sys.machine_core = "dolphin"
+	g.host_nm.netplay_start_host(g.host_sys, "dolphin", "MD5", {0: 1, 1: g.client_id}, 3, 0)
 	_ok(await _until(func() -> bool: return g.host_np.is_running()),
 		"join/a game with no transferable state is running")
 
 	var latecomer := _branch("L")
 	var late_sys := MockSys.new()
 	late_sys.name = "Sys"
-	late_sys.machine_core = "gambatte"
+	late_sys.machine_core = "dolphin"
 	latecomer.add_child(late_sys)
 	latecomer._netplay.system_override = late_sys
 	var told := []
@@ -1259,6 +1273,7 @@ func _test_join() -> void:
 
 	g.host_nm.netplay_stop("done")
 	await _await_frames(5)
+	NetplayCores.debug_allow_unverified = false
 	latecomer.queue_free()
 	_free(g)
 
