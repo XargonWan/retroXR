@@ -36,6 +36,7 @@ func _ready() -> void:
 	for a in OS.get_cmdline_user_args():
 		if a.begins_with("--core="): _core = a.trim_prefix("--core=")
 		elif a.begins_with("--rom="): _rom = a.trim_prefix("--rom=")
+		elif a.begins_with("--lookahead="): _lookahead = int(a.trim_prefix("--lookahead="))
 	get_tree().create_timer(300.0).timeout.connect(func(): print("[rt] TIMEOUT"); get_tree().quit(2))
 	var o: Object = ClassDB.instantiate("Libretro")
 	_lib = o as Node
@@ -47,10 +48,16 @@ func _ready() -> void:
 	print("[rt] %s / %s" % [_core, _rom.get_file()])
 
 var _feed := 0
+## How far the gate is fed past the current frame. This is not a speed knob: it
+## is how far the core RUNS between the save and the load, and a field the
+## deserializer fails to overwrite keeps its advanced value. Widen it and an
+## unrestored counter's delta grows with it; a properly restored field stays
+## identical however wide it is.
+var _lookahead := 90
 func _process(_d: float) -> void:
 	if _lib == null or _phase == "wait": return
 	var cur: int = _lib.GetFrameCount()
-	while _feed < cur + 90:
+	while _feed < cur + _lookahead:
 		var arr := PackedInt32Array(); arr.resize(35)
 		_lib.PostNetplayInputs(_feed, arr); _feed += 1
 	if _phase == "run" and cur >= 300:
