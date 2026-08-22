@@ -1,82 +1,55 @@
-## NetplayCores — allowlist of libretro cores verified safe for deterministic
-## lockstep netplay, plus the deterministic options each one needs.
+## NetplayCores — which cores may hold a deterministic lockstep session, and the
+## options each is pinned to.
 ##
-## A core only becomes netplay-capable once it has been vetted with
-## Tools/netplay_spike.gd: savestate round-trip AND two cold-started processes
-## must produce identical RAM-CRC streams. Cores not listed here fall back to
-## the pre-netplay "LIVE on host" placeholder for remote peers.
+## Vetted with Tools/netplay_spike.gd. `verified` is cold-start determinism:
+## two processes running the same inputs from frame 0 produce identical RAM-CRC
+## streams, which is all a session needs while everybody starts together.
+## `state_transfer` is savestate reload fidelity, which only a late join and a
+## desync resync need. `rollback` needs a state cheap enough to take every frame.
+## A core not listed here falls back to the "LIVE on host" placeholder.
 ##
-## `options` are forced on every peer at cold start so a peer's local core-option
-## config can't introduce divergence (e.g. threaded renderers, frameskip, RNG).
+## `options` are forced on every peer at cold start so a peer's own core-option
+## config cannot introduce divergence.
+##
+## core_name -> { verified, state_transfer, rollback, systems, options }
 class_name NetplayCores
 extends RefCounted
 
-## TWO PROPERTIES, NOT ONE. `verified` is cold-start determinism: two processes
-## running the same inputs from frame 0 produce identical RAM-CRC streams. That
-## is all a lockstep session needs while everybody starts together, and it is
-## what makes a game playable.
-##
-## `state_transfer` is savestate RELOAD fidelity: a state captured and restored
-## reproduces the same stream. Only a late join and a desync resync need it,
-## because only they put a state on the wire.
-##
-## They are genuinely different, and gambatte is the proof: it reproduces
-## perfectly from a cold start across two processes, and fails 16 of 20
-## checkpoints after reloading its own state. One flag for both would either
-## bar a core that plays fine or promise a late join that cannot work.
-##
-## core_name -> { verified, state_transfer, rollback, systems, options, notes }
 const CORES: Dictionary = {
 	"fceumm": {
 		"verified": true,
 		"state_transfer": true,
-		"rollback": true,   # serialization is fast+small (13.7 KB) — per-frame savestates OK
+		"rollback": true,
 		"systems": ["nes"],
-		"options": {},   # SMB passed determinism with defaults
-		"notes": "NES. Verified GREEN 2026-07-05 (savestate + cold-start cross-process CRC match; x64<->arm64 verified 2026-07-06).",
+		"options": {},
 	},
 	"gambatte": {
 		"verified": true,
-		# Fails its own savestate reload, so no late join and no resync. The
-		# round-trip probe localises it: 15 bytes differ in the state's first
-		# 1.7 KB and the offsets MOVE between runs, which is host-clock or RTC
-		# leakage in a header rather than anything about the emulated machine.
 		"state_transfer": false,
-		# Rollback rewinds through a state every frame, which is the one thing
-		# this core cannot reproduce.
 		"rollback": false,
 		"systems": ["game_boy", "game_boy_color"],
 		"options": {},
-		"notes": "Game Boy / Color. Cold-start GREEN 2026-08-21: identical CRC streams across two processes on Pokemon Yellow, 30 distinct checkpoints. Savestate reload RED, 16/20 mismatches, so no late join. GB and GBC link verified over netplay the same day, two peers, 0 desyncs. NOTE: the first vetting run used Tools/gblink ROMs and passed with a CONSTANT CRC at every checkpoint - an oracle that cannot fail. Vet against a real game.",
 	},
 	"mgba": {
 		"verified": true,
-		# Two mismatches after a reload and then it RECONVERGES, which is a
-		# different animal from Dolphin's 16 of 16 and still disqualifying: two
-		# strikes of three, every resync, is a peer one hiccup from spectator.
-		# The round-trip probe puts 14 bytes in the state's first 400, offsets
-		# moving between runs, so it reads as clock leakage in a header.
 		"state_transfer": false,
 		"rollback": false,
-		# GBA only, because GBA is all that was measured. mGBA carries a Game
-		# Boy and a Game Boy Color as well, and vetting one system says nothing
-		# about the others - they are different drivers inside the same core.
 		"systems": ["game_boy_advance"],
 		"options": {},
-		"notes": "Game Boy Advance. Cold-start GREEN 2026-08-21: identical CRC streams across two processes on Super Mario Advance, 30 distinct checkpoints. Savestate reload RED, 2/20 mismatches which then reconverge, so no late join. FOUR handhelds on one wire verified over netplay the same day: all four at the identical frame on both peers, 0 desyncs.",
 	},
-	# Pending vetting with netplay_spike before they can be enabled:
 	"snes9x": {
 		"verified": false,
+		"state_transfer": false,
+		"rollback": false,
 		"systems": ["super_nes"],
 		"options": {},
-		"notes": "SNES. Not yet spike-verified.",
 	},
 	"genesis_plus_gx": {
 		"verified": false,
+		"state_transfer": false,
+		"rollback": false,
 		"systems": ["megadrive", "genesis", "master_system", "game_gear"],
 		"options": {},
-		"notes": "Sega. Not yet spike-verified.",
 	},
 }
 
@@ -125,8 +98,3 @@ static func rollback_capable(core_name: String) -> bool:
 static func state_transfer_capable(core_name: String) -> bool:
 	var e: Dictionary = CORES.get(core_name, {})
 	return bool(e.get("verified", false)) and bool(e.get("state_transfer", false))
-
-
-static func notes(core_name: String) -> String:
-	var e: Dictionary = CORES.get(core_name, {})
-	return str(e.get("notes", ""))

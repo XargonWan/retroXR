@@ -43,6 +43,14 @@ var root_dir := _home + "/retroxr/libretro"
 var core := "fceumm"
 var rom := _home + "/retroxr/roms/nes/probe.nes"
 var rollback := false
+var timeout_s := 110.0   ## a heavy core needs far more than the default
+## --spike-option=key=value, repeatable. Vetting a core often means vetting one
+## of its DRIVERS: mGBA carries a Game Boy, a Game Boy Color and a Game Boy
+## Advance, and which one runs is a core option, not a different core.
+##
+## These are written into the player's real core_options/<core>.opt when the
+## core shuts down, so snapshot that file before a run and put it back after.
+var options: Dictionary = {}
 var state_out := ""      # write this run's state + CRC table here
 var state_in := ""       # load another machine's state instead of self-saving
 const ROLLBACK_LAG := 3      # confirmations trail execution by this many frames
@@ -90,6 +98,12 @@ func _ready() -> void:
 			rom = arg.trim_prefix("--spike-rom=")
 		elif arg.begins_with("--spike-root="):
 			root_dir = arg.trim_prefix("--spike-root=")
+		elif arg.begins_with("--spike-option="):
+			var kv := arg.trim_prefix("--spike-option=").split("=", true, 1)
+			if kv.size() == 2:
+				options[kv[0]] = kv[1]
+		elif arg.begins_with("--spike-timeout="):
+			timeout_s = float(arg.trim_prefix("--spike-timeout="))
 		elif arg.begins_with("--spike-state-out="):
 			state_out = arg.trim_prefix("--spike-state-out=")
 		elif arg.begins_with("--spike-state-in="):
@@ -100,7 +114,7 @@ func _ready() -> void:
 		if not _load_bundle(state_in):
 			return
 		_phase = "IMPORT"
-	get_tree().create_timer(110.0).timeout.connect(func() -> void:
+	get_tree().create_timer(timeout_s).timeout.connect(func() -> void:
 		var f: int = _lib.GetFrameCount() if _lib else -1
 		print("[spike] TIMEOUT phase=%s frame=%d" % [_phase, f])
 		get_tree().quit(1))
@@ -118,6 +132,9 @@ func _ready() -> void:
 	# Rollback mode: port 0 is REMOTE (local_mask 0) so the engine predicts it
 	# and our lagged confirmations force rewind+replay corrections.
 	_lib.SetNetplayRollback(rollback, 0, ROLLBACK_MAX_AHEAD)
+	for k: Variant in options:
+		_lib.SetCoreOption(str(k), str(options[k]))
+		print("[spike] option %s = %s" % [str(k), str(options[k])])
 	_lib.StartContent(root_dir, core, rom)
 	print("[spike] started %s / %s%s" % [core, rom.get_file(), " (ROLLBACK)" if rollback else ""])
 	if _phase == "IMPORT":

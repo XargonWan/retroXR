@@ -151,10 +151,12 @@ func _test_cores() -> void:
 	NetplayCores.debug_allow_unverified = false
 	_ok(not NetplayCores.is_capable("dolphin"), "cores/and the override is off again")
 
-	# Every entry has to carry its provenance, or the table stops being evidence.
+	# Every entry has to answer every question the table is asked, so a missing
+	# key cannot read as a quiet false.
 	for core: String in NetplayCores.CORES:
-		_ok(not NetplayCores.notes(core).is_empty(),
-			"cores/%s records why it is where it is" % core)
+		var e: Dictionary = NetplayCores.CORES[core]
+		for key: String in ["verified", "state_transfer", "rollback", "systems", "options"]:
+			_ok(e.has(key), "cores/%s declares %s" % [core, key])
 
 
 # ══ Core build identity ═══════════════════════════════════════════════════════
