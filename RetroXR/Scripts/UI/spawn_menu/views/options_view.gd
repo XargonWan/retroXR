@@ -658,6 +658,21 @@ func _build_debug_options(vbox: VBoxContainer) -> void:
 		CollisionDebug.set_enabled(self, on)
 	))
 
+	vbox.add_child(HSeparator.new())
+	vbox.add_child(MenuStyle.header("NETPLAY", 20))
+
+	# The allowlist refuses to start an unvetted core rather than risk a silent
+	# desync, which also forecloses its own evidence: a core cannot be shown
+	# deterministic if nothing may run it. This is how one gets measured.
+	MenuStyle.switch_row(vbox, "Allow unvetted cores",
+		NetplayCores.debug_allow_unverified) \
+		.toggled.connect(func(on: bool) -> void:
+			NetplayCores.debug_allow_unverified = on)
+	vbox.add_child(MenuStyle.hint(
+		"Not saved. Every machine will offer netplay, including cores never "
+		+ "checked for determinism — expect desyncs. A late join still refuses "
+		+ "an unvetted core, because a state that will not restore proves nothing."))
+
 	_build_audio_buffer_row(vbox)
 
 
