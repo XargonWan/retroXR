@@ -48,9 +48,12 @@ var _cable_plug: ControllerPlug = null
 var _cable_rope: VerletRope = null
 var _max_rope_length: float = 0.0
 
-# Hold state
+# Toggle-hold state (mirrors TVRemote and the Wiimote)
 var _holding_ctrl: XRController3D = null
 var _hint: HeldHint = null
+var _allow_drop := false
+var _saved_by: Node3D = null
+var _desktop_held := false
 
 # Motion
 var _prev_velocity := Vector3.ZERO
@@ -69,6 +72,10 @@ var _z_rest := Transform3D()
 
 func _ready() -> void:
 	super._ready()
+	# Toggle-hold, not grip-to-hold: this is a controller you pick up and keep,
+	# and its own stick and buttons are read off the hand holding it. A grip you
+	# have to keep squeezed is a grip you cannot use to play.
+	press_to_hold = false
 	add_to_group("spawned")
 	add_to_group(ControllerBindings.CONSUMER_GROUP)
 	grabbed.connect(_on_grabbed_signal)
@@ -137,19 +144,91 @@ func _physics_process(delta: float) -> void:
 			_cable_plug.linear_velocity -= dir * outward
 
 
-# ── Hold ──────────────────────────────────────────────────────────────────────
+# ── Toggle-hold (mirrors TVRemote) ────────────────────────────────────────────
+#
+# HeldHint.attach(self, true, ...) in _ready already ADVERTISES a combo drop, and
+# for a long time that was all it did: the row promised a gesture nothing
+# implemented, so the only way to put the Nunchuk down was to let go of the grip
+# it was never meant to need. The three pieces below are what the hint was
+# describing.
 
 func _on_grabbed_signal(_pickable: Node3D, by: Node3D) -> void:
 	if _hint:
 		_hint.on_grabbed(by)
 	var pickup := by as XRToolsFunctionPickup
-	_holding_ctrl = pickup.get_controller() if pickup else null
+	var ctrl := pickup.get_controller() if pickup else null as XRController3D
+	if ctrl == null:
+		# Desktop has no controller to hide and no combo to press; its own driver
+		# handles the drop. Deliberately NOT recorded in _saved_by, or the gate
+		# below would re-hold it and desktop could never let go.
+		if by.is_in_group("desktop_hand"):
+			_desktop_held = true
+		return
+	_saved_by = by
+	_holding_ctrl = ctrl
+	_set_model_visible(ctrl, false)
 
 
 func _on_dropped_signal(_pickable: Node3D) -> void:
+	# The gate. Every ordinary drop — an opened hand, a grip released, the pickup
+	# losing tracking — arrives here and is undone by re-holding on the next
+	# frame. Only _drop_all, which the combo reaches, sets _allow_drop first.
+	if not _allow_drop and is_instance_valid(_saved_by):
+		call_deferred("_rehold")
+		return
 	if _hint:
 		_hint.on_dropped()
+	_set_model_visible(_holding_ctrl, true)
+	_allow_drop = false
+	_saved_by = null
 	_holding_ctrl = null
+	_desktop_held = false
+
+
+func _rehold() -> void:
+	if _allow_drop:
+		_allow_drop = false
+		return
+	if not is_instance_valid(_saved_by):
+		# The hand went away rather than letting go — a teleport, a scene change.
+		# Give its model back before forgetting it, or the player is left with an
+		# invisible controller.
+		_set_model_visible(_holding_ctrl, true)
+		_saved_by = null
+		_holding_ctrl = null
+		return
+	_saved_by.call("_pick_up_object", self)
+
+
+## Hide the VR controller's own mesh while this is in that hand, so the player
+## sees the Nunchuk and the wrap-around hand rather than a Touch controller
+## floating inside it.
+func _set_model_visible(ctrl: XRController3D, shown: bool) -> void:
+	if is_instance_valid(ctrl) and ctrl.has_method("set_model_visible"):
+		ctrl.call("set_model_visible", shown)
+
+
+## The combo test itself lives on HeldHint so the check and the row advertising
+## it cannot disagree.
+func _is_combo_pressed(ctrl: XRController3D) -> bool:
+	if not HeldHint.is_combo_pressed(ctrl):
+		return false
+	if _hint:
+		_hint.note_used(&"drop_vr")
+	return true
+
+
+func _drop_all() -> void:
+	_set_model_visible(_holding_ctrl, true)
+	_allow_drop = true
+	_holding_ctrl = null
+	drop()
+
+
+func _exit_tree() -> void:
+	# Teardown is not a drop the player asked for, and the gate must not fight it.
+	_allow_drop = true
+	super._exit_tree()
 
 
 # ── State the Wiimote polls ───────────────────────────────────────────────────
@@ -176,6 +255,12 @@ func _held(source: Variant) -> bool:
 
 
 func _process(_delta: float) -> void:
+	# The VR drop. Desktop drops through its own driver's click, which reaches
+	# _on_dropped_signal with _saved_by unset and so passes the gate.
+	if _is_combo_pressed(_holding_ctrl):
+		_drop_all()
+		return
+
 	var state := get_state()
 	_animate(_c_button, _c_rest, state.get("c", false))
 	_animate(_z_button, _z_rest, state.get("z", false))
