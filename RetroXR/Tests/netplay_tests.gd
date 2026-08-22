@@ -1137,6 +1137,50 @@ func _test_join() -> void:
 	load_hung.get_parent().queue_free()
 	_free(w)
 
+	# ── A core that cannot put a state on the wire ────────────────────────────
+	# gambatte plays perfectly from a cold start and cannot reproduce its own
+	# savestate, so there is nothing to send a latecomer. That is a legitimate
+	# answer; saying it OUT LOUD is the part that was missing. Standing in the
+	# room beside a cabinet that is visibly being played, with a blank screen and
+	# no explanation anywhere, is indistinguishable from the game being broken.
+	var g := await _pair()
+	g.host_sys.machine_core = "gambatte"
+	g.client_sys.machine_core = "gambatte"
+	g.host_nm.netplay_start_host(g.host_sys, "gambatte", "MD5", {0: 1, 1: g.client_id}, 3, 0)
+	_ok(await _until(func() -> bool: return g.host_np.is_running()),
+		"join/a game with no transferable state is running")
+
+	var latecomer := _branch("L")
+	var late_sys := MockSys.new()
+	late_sys.name = "Sys"
+	late_sys.machine_core = "gambatte"
+	latecomer.add_child(late_sys)
+	latecomer._netplay.system_override = late_sys
+	var told := []
+	latecomer.status_changed.connect(func(text: String) -> void: told.append(text))
+	latecomer.join_game("::1", PORT)
+	_ok(await _until(func() -> bool: return g.host_nm.peers.size() == 3),
+		"join/the latecomer is in the room")
+	# The status line carries connection chatter too, so look for the refusal
+	# among what arrived rather than assuming it is the last thing said.
+	var refused := func() -> bool:
+		for t: String in told:
+			if t.contains("RESET"):
+				return true
+		return false
+	_ok(await _until(refused),
+		"join/and is TOLD it cannot join this one, rather than left blank")
+	_ok(await _until(func() -> bool:
+			return g.host_np._spectators.has(_other_id(g.host_nm, g.client_id))),
+		"join/the host keeps them as a spectator")
+	_ok(g.host_np.is_running(),
+		"join/and the game the others are playing carries on")
+
+	g.host_nm.netplay_stop("done")
+	await _await_frames(5)
+	latecomer.queue_free()
+	_free(g)
+
 
 # ══ What a state costs on the wire ════════════════════════════════════════════
 # A late join and every desync resync ship a full savestate per machine, and on
@@ -1409,9 +1453,25 @@ func _test_strategy() -> void:
 	NetplayCores.debug_allow_unverified = false
 	await _await_frames(5)
 
-	# The slowest machine sets the CRC pace. Hashing a GameCube's 24 MB at a Game
-	# Boy's cadence would put the hitch on every peer, because every peer runs
-	# every machine.
+	# The slowest machine sets the CRC pace, and it has to REACH the core: the
+	# native hook has existed and gone uncalled, which left every core hashing at
+	# a 2 KB machine's cadence.
+	NetplayCores.debug_allow_unverified = true
+	c.host_sys.machine_core = "dolphin"
+	c.host_far.machine_core = "dolphin"
+	c.client_sys.machine_core = "dolphin"
+	c.client_far.machine_core = "dolphin"
+	c.host_nm.netplay_start_host(c.host_sys, "dolphin", "MD5", cowners, 3, -1)
+	_eq(c.host_sys.lib.crc_interval, NetplayCores.crc_interval("dolphin"),
+		"strategy/the core is told how often to hash its RAM")
+	_eq(c.host_far.lib.crc_interval, NetplayCores.crc_interval("dolphin"),
+		"strategy/every machine on the bus, not just the anchor")
+	c.host_nm.netplay_stop("done")
+	await _await_frames(5)
+	NetplayCores.debug_allow_unverified = false
+
+	# Hashing a GameCube's 24 MB at a Game Boy's cadence would put the hitch on
+	# every peer, because every peer runs every machine.
 	var mixed: Array = [{"core": "fceumm"}, {"core": "dolphin"}]
 	c.host_np._machine_specs = mixed
 	_eq(c.host_np._group_crc_interval(), NetplayCores.crc_interval("dolphin"),
@@ -1772,6 +1832,9 @@ class MockLib extends Node:
 	var disc_ops: Array = []
 	var reset_ops: Array = []
 	var rollback_masks: Array = []
+	## Frames between RAM CRC checkpoints, as the session set it. -1 until asked,
+	## so a case can tell "never called" from "called with the default".
+	var crc_interval := -1
 	var last_input := PackedInt32Array()
 	var restored_link_state: Array = []
 
@@ -1827,6 +1890,9 @@ class MockLib extends Node:
 	func ScheduleNetplayLocalMask(frame: int, mask: int) -> bool:
 		rollback_masks.append([frame, mask])
 		return true
+
+	func SetNetplayCrcInterval(frames: int) -> void:
+		crc_interval = frames
 
 	func setup_gate(_mask: int, start_frame: int) -> void:
 		_enabled = true

@@ -535,6 +535,13 @@ func _cold_start_local(start_frame: int) -> bool:
 				if machine_of_port(global_port) == i:
 					local_mask |= 1 << port_on_machine(global_port)
 			pre_lib.SetNetplayRollback(_rollback, local_mask, MAX_AHEAD)
+		# How often this core stops to hash its RAM. The whole of SYSTEM_RAM goes
+		# through CRC32 inline on the emulation thread, so the cost is the size of
+		# the machine: nothing for a 2 KB NES, tens of milliseconds for a
+		# GameCube's 24 MB. The GROUP's gap, because every peer runs every machine
+		# and a hitch anywhere holds the gate for all of them.
+		if pre_lib != null and pre_lib.has_method("SetNetplayCrcInterval"):
+			pre_lib.SetNetplayCrcInterval(_group_crc_interval())
 		# net_start_core sets the gate (SetNetplayMode) BEFORE StartContent so
 		# the core holds at the start frame until inputs post.
 		#
@@ -2084,6 +2091,15 @@ func on_peer_joined(peer_id: int) -> void:
 			_spectators[peer_id] = true
 			print("[Netplay] peer %d stays a spectator: core '%s' cannot transfer a state"
 				% [peer_id, _core])
+			# TELL THEM. This used to return in silence, and silence is the worst
+			# thing it could do: no core starts on their machine, so they stand in
+			# the room beside a cabinet that is visibly being played, with a blank
+			# screen and nothing anywhere saying why. The refusal already exists
+			# for the transfer-failed path; this one is not a failure, so it says
+			# what would let them in instead.
+			_np_join_refused.rpc_id(peer_id,
+				"this game cannot be joined once it has started — "
+				+ "ask the players to press RESET on the machine")
 		_ready_peers[peer_id] = true
 		return
 	if _join_paused or _join_capture_pending or not _pending.is_empty() \
