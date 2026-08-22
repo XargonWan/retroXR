@@ -26,6 +26,15 @@
 ## Wii menu from a script means driving the pointer, and the pointer follows
 ## whichever IR mode the core options file happens to be carrying; put the
 ## headset on for that.
+##
+## KNOWN BROKEN, 2026-08-21: the d-pad walk below no longer leaves the main menu.
+## A run gets as far as nc_boxing_highlighted.png with Tennis still selected, and
+## every shot after it — ring, guard_card, remote_only_*, both_raised_* — is that
+## same menu under a different name. So the guard-card oracle in _run() DID NOT
+## RUN, and a run that prints all its shot lines and exits 0 still proves nothing
+## about either accelerometer. Read the PNGs before believing a green run. The
+## sensor-enable lines above are unaffected: those come from the boot, before any
+## navigation.
 extends Node
 
 const RETRO_DEVICE_WIIMOTE_NC := 769
@@ -33,6 +42,16 @@ const RETRO_DEVICE_WIIMOTE_NC := 769
 var core := "dolphin"
 var rom := ""
 var root_dir := ""
+
+## When the port device is announced. "late" waits for the core to be running,
+## which is what this probe always did. "early" announces from options_ready,
+## which is what RetroSystem actually does — and options_ready is emitted just
+## before the emulation loop starts, so it races InitSensors(), which is where
+## Dolphin turns the sensors on. The accelerometer and gyroscope are bound
+## INSIDE retro_set_controller_port_device and only if that flag is already set,
+## and nothing rebinds afterwards, so losing that race costs a remote its motion
+## for the whole session.
+var announce := "late"
 
 var _lib: Node = null
 
@@ -50,6 +69,8 @@ func _ready() -> void:
 			core = arg.trim_prefix("--nc-core=")
 		elif arg.begins_with("--nc-root="):
 			root_dir = arg.trim_prefix("--nc-root=")
+		elif arg.begins_with("--nc-announce="):
+			announce = arg.trim_prefix("--nc-announce=")
 
 	get_tree().create_timer(900.0).timeout.connect(func() -> void:
 		print("[nunchuk] TIMEOUT")
@@ -63,7 +84,15 @@ func _ready() -> void:
 	var obj: Object = ClassDB.instantiate("Libretro")
 	_lib = obj as Node
 	add_child(_lib)
+	if announce == "early":
+		_lib.connect("options_ready", _on_options_ready)
 	_run()
+
+
+func _on_options_ready(_c: Dictionary, _d: Dictionary, _v: Dictionary) -> void:
+	print("[nunchuk] announcing at options_ready, core frame %d"
+		% int(_lib.GetFrameCount()))
+	_lib.SetControllerPortDevice(0, RETRO_DEVICE_WIIMOTE_NC)
 
 
 func _wait_core_frames(n: int) -> void:
@@ -92,9 +121,12 @@ var _nc_accel := REST
 
 func _run() -> void:
 	print("[nunchuk] booting %s" % rom.get_file())
+	print("[nunchuk] announce=%s" % announce)
 	_lib.StartContent(root_dir, core, rom)
 	await _wait_core_frames(60)
-	_lib.SetControllerPortDevice(0, RETRO_DEVICE_WIIMOTE_NC)
+	if announce == "late":
+		print("[nunchuk] announcing late, core frame %d" % int(_lib.GetFrameCount()))
+		_lib.SetControllerPortDevice(0, RETRO_DEVICE_WIIMOTE_NC)
 	await _wait_core_frames(60)
 	DirAccess.make_dir_recursive_absolute("res://probe_out")
 
