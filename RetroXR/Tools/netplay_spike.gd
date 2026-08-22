@@ -206,6 +206,7 @@ func _on_crc(frame: int, crc: int) -> void:
 			_lib.RequestLoadState(_state_data, _state_frame)
 	elif _phase == "B":
 		_crc_b[frame] = crc
+		print("[crcB] %d %08x" % [frame, crc])
 		if _import_frame >= 0 and frame >= END_AT:
 			_finish()
 
