@@ -1128,15 +1128,16 @@ func _button_mask(pressed: Dictionary) -> int:
 	if stick.x < -DPAD_THRESHOLD: mask |= 1 << ControllerBindings.JOYPAD_LEFT
 	if stick.x >  DPAD_THRESHOLD: mask |= 1 << ControllerBindings.JOYPAD_RIGHT
 	mask |= _desktop_dpad_mask()
-	# Nunchuk: C and Z land on X/Y (freed by 1/2 moving), its shake on L2.
+	# Nunchuk: C and Z land on X/Y, freed by 1/2 moving. L2 — the core's "Shake
+	# Nunchuk" — is deliberately never set from here. A Nunchuk reports a real
+	# accelerometer now, and Dolphin composes shake ON TOP of it, so a gesture
+	# would put a second, larger, canned punch behind every real one.
 	if nc and _nunchuk != null:
 		var nstate := _nunchuk.get_state()
 		if nstate.get("c", false):
 			mask |= 1 << ControllerBindings.JOYPAD_X
 		if nstate.get("z", false):
 			mask |= 1 << ControllerBindings.JOYPAD_Y
-		if nstate.get("shake", false):
-			mask |= 1 << ControllerBindings.JOYPAD_L2
 	return mask
 
 
@@ -1173,6 +1174,23 @@ func _process(delta: float) -> void:
 		libretro.SetJoypadState(_port_index, joy.btn, joy.alx, joy.aly, 0, 0)
 
 	_update_aim(libretro)
+
+
+## Both sensors ride the PHYSICS clock, not the render one, and that is not a
+## detail: they are differentiated from linear_velocity and from the barrel's
+## pose, and a held remote is a frozen kinematic body moved by the grab driver's
+## own _physics_process. Those two only change on a physics tick, so dividing
+## their change by a render delta divides by the wrong number and samples a step
+## function off-phase. Measured on the Nunchuk, whose derivation is the same: a
+## brisk 30 cm wave reported 88 m/s^2 against a true 23.7, and the one g of
+## gravity that carries the pose — which is the whole of what Dolphin's
+## IMUAccelerometer positions a hand from — was swamped by up to 84 degrees.
+func _physics_process(delta: float) -> void:
+	if _connected_system == null or _port_index < 0:
+		return
+	var libretro := _connected_system.get_libretro_node()
+	if not is_instance_valid(libretro):
+		return
 	_send_accel(libretro, delta)
 	_send_gyro(libretro, delta)
 

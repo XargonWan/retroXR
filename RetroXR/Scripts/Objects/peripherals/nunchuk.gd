@@ -34,11 +34,6 @@ const HINT_HEIGHT := 0.10
 const BUTTON_PRESS := 0.0015
 const ANIM_WEIGHT := 0.4
 
-## Shake threshold in m/s^2 of proper acceleration, over gravity. The core takes
-## the Nunchuk's shake as a button as well as a sensor, so this is where the
-## gesture becomes one.
-const SHAKE_THRESHOLD := 14.0
-
 ## Gravity used to convert measured acceleration into g, matching the remote's.
 ## The core multiplies by the same constant on the way back in.
 const G := 9.80665
@@ -60,7 +55,6 @@ var _hint: HeldHint = null
 # Motion
 var _prev_velocity := Vector3.ZERO
 var _accel_smoothed := Vector3.UP * G
-var _shaking := false
 
 # Active bindings
 var _nunchuk_map: Dictionary = ControllerBindings.DEFAULT_NUNCHUK_MAP.duplicate()
@@ -126,7 +120,8 @@ func get_plug() -> ControllerPlug:
 	return _cable_plug
 
 
-func _physics_process(_delta: float) -> void:
+func _physics_process(delta: float) -> void:
+	_update_accel(delta)
 	if _cable_plug == null or _cable_attach_point == null or _max_rope_length <= 0.0:
 		return
 	if _cable_plug.is_picked_up():
@@ -159,15 +154,15 @@ func _on_dropped_signal(_pickable: Node3D) -> void:
 
 # ── State the Wiimote polls ───────────────────────────────────────────────────
 
-## Stick, C, Z and whether the nunchuk is being shaken right now. Read once a
-## frame by the remote holding the port; nothing here reaches the core directly.
+## Stick, C and Z. Read once a frame by the remote holding the port; nothing here
+## reaches the core directly. Motion is NOT in here — it goes out as a sensor,
+## through accel_in_nunchuk_frame, and no longer doubles as a button.
 func get_state() -> Dictionary:
 	var vr := is_instance_valid(_holding_ctrl)
 	return {
 		"stick": _holding_ctrl.get_vector2("primary") if vr else Vector2.ZERO,
 		"c":     _held(_nunchuk_map.get("c", "ax_button")),
 		"z":     _held(_nunchuk_map.get("z", "trigger")),
-		"shake": _shaking,
 	}
 
 
@@ -180,8 +175,7 @@ func _held(source: Variant) -> bool:
 	return _holding_ctrl.get_float(name_str) > float(INPUT_THRESHOLDS.get(name_str, 0.5))
 
 
-func _process(delta: float) -> void:
-	_update_accel(delta)
+func _process(_delta: float) -> void:
 	var state := get_state()
 	_animate(_c_button, _c_rest, state.get("c", false))
 	_animate(_z_button, _z_rest, state.get("z", false))
@@ -191,16 +185,19 @@ func _process(delta: float) -> void:
 ## derives its own: proper acceleration is motion MINUS gravity, so one at rest
 ## reads +1g upward rather than nothing, and simply holding it still while the
 ## room moves cannot register as a jerk.
+##
+## Driven from _physics_process, and only from there. linear_velocity is the
+## physics server's, and a held Nunchuk is a frozen kinematic body the grab
+## driver moves on its own physics tick, so this value changes on that clock and
+## no other. Differentiated by a render delta it reads a step function off-phase
+## and by the wrong divisor — measured at 88 m/s^2 for a brisk 30 cm wave whose
+## true peak is 23.7, which swamps the one g of gravity the pose is read from.
 func _update_accel(delta: float) -> void:
 	if delta <= 0.0:
 		return
 	var velocity := linear_velocity
 	var a_world := (velocity - _prev_velocity) / delta + Vector3.UP * G
 	_prev_velocity = velocity
-	# Shake reads the RAW magnitude. Smoothing is there so a core sees a steady
-	# sensor, and taking the gesture off the smoothed vector would blunt exactly
-	# the spike the gesture exists to notice.
-	_shaking = a_world.length() > SHAKE_THRESHOLD
 	_accel_smoothed = _accel_smoothed.lerp(a_world, ACCEL_SMOOTHING)
 
 
