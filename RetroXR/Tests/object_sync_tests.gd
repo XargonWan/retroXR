@@ -757,6 +757,19 @@ func _test_controller_end_to_end(p: Pair) -> void:
 
 
 func _test_hinges(p: Pair) -> void:
+	# A busy room can move more controls than one reliable packet accepts. The
+	# overflow must remain queued for the next 15 Hz flush; the old code cleared
+	# all 65 records and then resized the outgoing array to 64, losing the last
+	# released position forever.
+	for i in range(NetObjectSync.MAX_HINGES_PER_BATCH + 1):
+		p.host_os._hinge_pending["overflow:%d" % i] = {"value": i}
+	p.host_os._flush_hinge_updates()
+	_eq(p.host_os._hinge_pending.size(), 1,
+		"hinges/overflow remains queued instead of being discarded")
+	p.host_os._flush_hinge_updates()
+	_ok(p.host_os._hinge_pending.is_empty(),
+		"hinges/the next packet drains the overflow")
+
 	var host_body := MockHingeBody.new()
 	host_body.name = "HingeBody"
 	p.host_root.add_child(host_body)

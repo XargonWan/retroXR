@@ -583,14 +583,26 @@ func _on_control_changed(value: float, owner: Node, control_path: NodePath,
 func _flush_hinge_updates() -> void:
 	if _hinge_pending.is_empty():
 		return
-	var updates: Array = _hinge_pending.values()
-	_hinge_pending.clear()
-	if updates.size() > MAX_HINGES_PER_BATCH:
-		updates.resize(MAX_HINGES_PER_BATCH)
+	var updates := _take_hinge_batch()
 	if _nm.is_host():
 		_hinge_apply.rpc(updates)
 	else:
 		_hinge_request.rpc_id(1, updates)
+
+
+## Remove only the controls this packet can carry. Clearing the dictionary and
+## resizing its values dropped every update after the first 64 permanently.
+## Erasing the sent keys also moves controls which change again to the back of
+## the insertion order, so a continuously moving first batch cannot starve the
+## remainder.
+func _take_hinge_batch() -> Array:
+	var updates: Array = []
+	for key: Variant in _hinge_pending.keys():
+		updates.append(_hinge_pending[key])
+		_hinge_pending.erase(key)
+		if updates.size() == MAX_HINGES_PER_BATCH:
+			break
+	return updates
 
 
 @rpc("any_peer", "call_remote", "reliable", 0)
