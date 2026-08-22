@@ -127,6 +127,53 @@ func _run() -> void:
 	print("[probe] card A mtime %d -> %d, %d bytes"
 		% [before, FileAccess.get_modified_time(path_a), after_bytes.size()])
 
+	# The watcher that stands in for sram_flushed, which Dolphin never raises.
+	# Splice a save into slot B's file behind the core's back, which is what a
+	# game writing one looks like from out here, and confirm the poll notices and
+	# attributes it. _changed_card_saves is the half that decides what gets sent
+	# to RomM, so this is the sync path end to end short of a server.
+	var gci := PackedByteArray()
+	gci.resize(GCCard.DENTRY_SIZE + GCCard.BLOCK_SIZE)
+	gci.fill(0)
+	for i in 4:
+		gci[GCCard.E_GAMECODE + i] = "GPRB".unicode_at(i)
+	for i in 2:
+		gci[GCCard.E_MAKERCODE + i] = "01".unicode_at(i)
+	for i in "probe_save".length():
+		gci[GCCard.E_FILENAME + i] = "probe_save".unicode_at(i)
+	for i in 4:
+		gci[GCCard.E_IMAGE_OFF + i] = 0xFF
+		gci[GCCard.E_COMMENTS + i] = 0xFF
+	GCCard._put_be16(gci, GCCard.E_FIRSTBLK, GCCard.SYSTEM_BLOCKS)
+	GCCard._put_be16(gci, GCCard.E_BLOCKS, 1)
+	_ok("the probe's save is a valid gci", GCCard.is_gci(gci))
+
+	var merged := GCCard.insert_save(FileAccess.get_file_as_bytes(path_b), gci)
+	_ok("it splices into card B", not merged.is_empty())
+	var f := FileAccess.open(path_b, FileAccess.WRITE)
+	f.store_buffer(merged)
+	f.close()
+
+	# What is asserted is that the WATCHER fired, not that an upload happened:
+	# _sync_card_saves bails without a configured server, and on this box there
+	# may not be one. The mtime the poll recorded is the mechanism's own
+	# evidence that it looked at the file and accepted it.
+	var seen := false
+	for i in 300:
+		await get_tree().process_frame
+		var mtimes: Array = _sys.get("_card_mtimes")
+		if int(mtimes[1]) != 0:
+			seen = true
+			break
+	_ok("the poll noticed card B was written", seen,
+		"mtime never recorded after 300 frames")
+	print("[probe] SaveSync available = %s" % SaveSync.is_available())
+
+	var listed := GCCard.list_saves(FileAccess.get_file_as_bytes(path_b), false)
+	_ok("card B now holds the save", listed.size() == 1)
+	_ok("under its own name",
+		listed.size() == 1 and str(listed[0]["name"]) == "probe_save")
+
 	_sys.call("toggle_power")
 	for i in 120:
 		await get_tree().process_frame

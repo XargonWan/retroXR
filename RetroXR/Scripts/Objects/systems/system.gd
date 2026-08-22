@@ -2145,6 +2145,7 @@ func _after_core_started() -> void:
 	_bind_audio_player()
 	is_powered_on = true
 	set_process(true)
+	_start_card_polling()
 	_update_power_button_visual()
 	_model.on_power_on()
 	# Learn whether this core exposes the disk-control interface (multi-disc
@@ -2307,6 +2308,9 @@ func _stop_core() -> void:
 	_audio_player = null
 	_audio_voices = PackedInt32Array()
 	is_powered_on = false
+	# StopContent returned but the core has not finished: a card the core owns is
+	# written during the teardown that follows. Keep watching for a while.
+	_stop_card_polling_soon()
 	_has_disk_control = false
 	_disc_index = 0
 	_disc_ejected = false
@@ -4074,6 +4078,86 @@ func _changed_card_saves(fmt: CardFormat, slot: int,
 		seen[save_slot] = digest
 		out.append({"slot": save_slot, "title": str(s["title"]), "bytes": bytes})
 	return out
+
+
+# --- Cards the core owns (Dolphin) --------------------------------------------
+#
+# A PlayStation card reaches RomM through sram_flushed, which the C++ raises
+# after IT writes the file. Dolphin exposes no SAVE_RAM at all -- it owns its
+# card files and writes them from a thread of its own, on a 15 s dirty timer plus
+# a final write when the device is destroyed -- so that signal never fires for a
+# GameCube and nothing here would ever hear that a card had changed.
+#
+# So watch the files. mtime is only the cheap hint; the real gate is the content
+# diff in _changed_card_saves, which hashes each save individually. That matters
+# because Dolphin's exit flush rewrites the whole card whether it is dirty or
+# not, so mtime alone cannot tell "the game saved" from "the card was rewritten
+# byte-identically on the way out". The hash can, and says nothing changed.
+
+## How often to look at a seated card while the machine is on. Dolphin's own
+## flush is every 15 s when dirty, so this is comfortably inside it.
+const CARD_POLL_SEC := 5.0
+
+## How long to keep looking after power-off. StopContent is deliberately
+## non-blocking -- the join, retro_unload_game and the core's own final card
+## write all happen on the emulation thread afterwards -- so the file is NOT
+## final when the machine reports itself off. Nothing in GDScript can observe
+## when it becomes final, so this waits out the teardown instead.
+const CARD_POLL_AFTER_OFF_SEC := 12.0
+
+var _card_poll_timer: Timer = null
+var _card_mtimes: Array[int] = [0, 0]
+var _card_poll_until := 0.0
+
+
+func _start_card_polling() -> void:
+	if _card_slot_count() <= 1:
+		return   # single-slot hardware has sram_flushed and needs none of this
+	if _card_poll_timer == null:
+		_card_poll_timer = Timer.new()
+		_card_poll_timer.wait_time = CARD_POLL_SEC
+		_card_poll_timer.timeout.connect(_poll_cards)
+		add_child(_card_poll_timer)
+	_card_mtimes = [0, 0]
+	_card_poll_until = 0.0
+	_card_poll_timer.start()
+
+
+## Keep polling for a while after the machine goes off, then stop. The last write
+## lands during teardown, after this function's caller has already returned.
+func _stop_card_polling_soon() -> void:
+	if _card_poll_timer == null:
+		return
+	_card_poll_until = Time.get_unix_time_from_system() + CARD_POLL_AFTER_OFF_SEC
+
+
+func _poll_cards() -> void:
+	if not is_powered_on and _card_poll_until > 0.0 \
+			and Time.get_unix_time_from_system() > _card_poll_until:
+		_card_poll_timer.stop()
+		_card_poll_until = 0.0
+		return
+	for slot in _card_slot_count():
+		var card := get_snapped_memcard(slot)
+		if card == null:
+			continue
+		var path := SramPaths.find_card(str(card.get("card_id")), _card_family())
+		if path.is_empty():
+			continue
+		var mtime := FileAccess.get_modified_time(path)
+		if mtime == _card_mtimes[slot]:
+			continue
+		var fmt := CardFormats.for_path(path)
+		var data := FileAccess.get_file_as_bytes(path)
+		# Dolphin writes the whole card in one call with no atomic rename, so a
+		# poll can land mid-write. An image whose checksums do not add up is a
+		# torn read, not a changed card: skip it and take the next tick rather
+		# than uploading half a save to a server, which is not recoverable from
+		# inside the app.
+		if fmt == null or not fmt.is_card_image(data):
+			continue
+		_card_mtimes[slot] = mtime
+		_sync_card_saves(fmt, slot, path)
 
 
 ## Remember what was already on a card the moment it is mounted, so the first
