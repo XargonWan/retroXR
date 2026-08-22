@@ -865,6 +865,28 @@ func _test_the_lead_will_seat() -> void:
 		not slot.can_preview(link_end))
 	_ok("but it does go into an EXT socket", ext.can_preview(link_end))
 
+	# Seat the asymmetric lead through the real socket APIs, then ask the real
+	# machine discovery method for its bus. The GameCube end exists only in the
+	# controller_plug group; a scan limited to link_plug passes every electrical
+	# cable test above but silently leaves the console out of netplay.
+	slot.pick_up_object(gc_end)
+	ext.pick_up_object(gba_end)
+	await get_tree().process_frame
+	lead._resolve()
+	# Remove the handheld end as an alternate discovery route. The cable remains
+	# physically seated and can still state its bus; only the GameCube end's
+	# controller_plug membership can make the room-wide scan find it now.
+	gba_end.remove_from_group("link_plug")
+	var console_bus: Array = console.net_link_bus()
+	_eq("netplay finds a bus through the controller socket", console_bus.size(), 2)
+	_ok("and that bus contains the GameCube",
+		console_bus.any(func(entry: Dictionary) -> bool:
+			return entry.get("machine") == console))
+	_ok("and that bus contains the handheld",
+		console_bus.any(func(entry: Dictionary) -> bool:
+			return entry.get("machine") == handheld))
+	gba_end.add_to_group("link_plug")
+
 	console.queue_free()
 	handheld.queue_free()
 	lead.queue_free()
