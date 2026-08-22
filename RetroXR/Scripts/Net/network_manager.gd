@@ -29,7 +29,7 @@ const GLPROBE_EXTERNAL_CFG := "/sdcard/Android/data/com.xenu.retroxr/files/glpro
 ## verifies late-join savestates instead of putting them in one RPC. These
 ## wire layouts are intentionally refused across versions:
 ## accepting an old peer would look connected while feeding different cores.
-const PROTOCOL_VERSION := 11
+const PROTOCOL_VERSION := 12
 const POSE_INTERVAL := 1.0 / 20.0
 
 # ENet channels

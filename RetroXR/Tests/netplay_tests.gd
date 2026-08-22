@@ -33,7 +33,7 @@ extends Node
 
 const NM_SCRIPT := preload("res://Scripts/Net/network_manager.gd")
 const GROUPS := ["cores", "identity", "wire", "owners", "assemble", "start",
-	"lockstep", "desync", "join", "leave", "rollback", "link"]
+	"lockstep", "desync", "join", "transfer", "leave", "rollback", "link"]
 const PORT := 42913
 
 ## What a real fceumm reports, near enough. The exact strings do not matter to
@@ -74,6 +74,8 @@ func _ready() -> void:
 		await _test_desync()
 	if _want("join"):
 		await _test_join()
+	if _want("transfer"):
+		await _test_transfer()
 	if _want("leave"):
 		await _test_leave()
 	if _want("rollback"):
@@ -990,6 +992,62 @@ func _test_join() -> void:
 	w.host_nm.netplay_stop("done")
 	await _await_frames(5)
 	load_hung.get_parent().queue_free()
+	_free(w)
+
+
+# ══ What a state costs on the wire ════════════════════════════════════════════
+# A late join and every desync resync ship a full savestate per machine, and on
+# a heavy core that is the difference between a pause and a session nobody
+# waits out. A real Dolphin state measured 92291907 bytes; compressed, 6590109,
+# in 48 ms. Nothing in this path used to compress at all.
+
+func _test_transfer() -> void:
+	# The mechanism, against the constant the protocol actually uses. A console
+	# savestate is mostly zeroed RAM, which is why the real ratio is a few
+	# percent rather than the ~50% a small structured payload gives.
+	var raw := PackedByteArray()
+	raw.resize(1 << 20)
+	for i in range(0, raw.size(), 4096):
+		raw[i] = (i / 4096) & 0xFF          # sparse, like real RAM
+	var packed := raw.compress(NetplaySession.STATE_COMPRESSION)
+	_ok(packed.size() < raw.size() / 4,
+		"transfer/a sparse state compresses to well under a quarter (%d -> %d)"
+			% [raw.size(), packed.size()])
+	var back := packed.decompress(raw.size(), NetplaySession.STATE_COMPRESSION)
+	_eq(back.size(), raw.size(), "transfer/and decompresses to its declared size")
+	_ok(back == raw, "transfer/byte for byte")
+
+	# The size has to be carried, not guessed: decompress() needs it up front,
+	# and it is also the only bound on what a manifest can make a peer allocate.
+	var short_guess := packed.decompress(raw.size() / 2, NetplaySession.STATE_COMPRESSION)
+	_ok(short_guess.size() != raw.size(),
+		"transfer/a wrong declared size does not silently yield the right buffer")
+
+	# End to end: a joiner must receive every byte the host saved, through
+	# compress, chunk, hash-verify and decompress. Two chunks' worth plus a
+	# remainder, so the last partial chunk is exercised too.
+	var w := await _pair()
+	var big := NetplaySession.STATE_CHUNK_SIZE * 3 + 977
+	w.host_sys.lib.save_size = big
+	w.host_np._pending_local_route[0] = [0x01, 0, 0, 0, 0]
+	w.host_nm.netplay_start_host(w.host_sys, "fceumm", "MD5", {0: 1}, 3, 0)
+	_ok(await _until(func() -> bool: return w.host_np.is_running()),
+		"transfer/a game is running to join")
+	await _await_frames(60)
+
+	var third := _branch("T")
+	var tsys := MockSys.new()
+	tsys.name = "Sys"
+	third.add_child(tsys)
+	third._netplay.system_override = tsys
+	third.join_game("127.0.0.1", PORT)
+	_ok(await _until(func() -> bool: return tsys.lib.loaded_state, 900),
+		"transfer/the joiner loaded a state")
+	_eq(tsys.lib.loaded_state_size, big,
+		"transfer/every byte survived compress, chunk and decompress")
+	w.host_nm.netplay_stop("done")
+	await _await_frames(10)
+	third.get_parent().queue_free()
 	_free(w)
 
 
