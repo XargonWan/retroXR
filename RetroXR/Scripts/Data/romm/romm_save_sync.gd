@@ -105,6 +105,20 @@ func rom_id_for(systemid: String, rom_path: String) -> int:
 	var gid := str(game.get("game_id", ""))
 	if gid.begins_with("romm:"):
 		resolved = int(gid.substr(5))
+	else:
+		# A game scraped from somewhere else. A ScreenScraper id is a bare number
+		# and means nothing to RomM, so the gamelist cannot answer -- but a hash
+		# resolution may have, and that answer is PERSISTED.
+		#
+		# Without this the persisted answer was unreachable from here: _id_done
+		# writes it to the session cache above, which is memory only, so the id
+		# was found once and then thrown away at every restart. A library scraped
+		# from ScreenScraper had no route to a rom_id at all on the flush path,
+		# and its saves went nowhere.
+		#
+		# resolved_rom_id guards on the file's size and mtime, so a different ROM
+		# dropped in under the same name does not inherit the old answer.
+		resolved = maxi(resolved_rom_id(systemid, rom_path), 0)
 	_rom_ids[rom_path] = resolved
 	return resolved
 
