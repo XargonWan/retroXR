@@ -70,6 +70,7 @@ const CORES: Dictionary = {
 		"scratch_saves": true,
 		"systems": ["gamecube", "wii"],
 		"options": {
+			"dolphin_determinism": "enabled",
 			"dolphin_main_cpu_thread": "enabled",
 			"dolphin_main_mmu": "disabled",
 			"dolphin_main_accurate_cpu_cache": "disabled",

@@ -59,6 +59,8 @@ var peers := 2
 var gbas := 4
 ## Empty by default: the console uploads its own program over the wire.
 var gba_rom := ""
+## Optional per-peer core roots; see --peer-roots.
+var peer_roots := ""
 
 var _branches: Array = []       # NetworkManager per peer
 var _machines: Array = []       # Array[Array] — per peer, [gc, gba0..gbaN]
@@ -182,6 +184,16 @@ func _ready() -> void:
 			gba_rom = arg.trim_prefix("--gba-rom=")
 		elif arg.begins_with("--root="):
 			root_dir = arg.trim_prefix("--root=")
+		elif arg.begins_with("--peer-roots="):
+			# One core root per peer, as "<dir>" — each peer gets <dir>/p<N>.
+			#
+			# Every peer here is a NetworkManager in ONE process, so they would
+			# otherwise share a root and two Dolphins would write the same
+			# save/dolphin tree and the same core_options file. Real peers are
+			# separate processes on separate machines and never do that, so the
+			# shared root is an artifact of the harness that makes divergence
+			# look worse than it is.
+			peer_roots = arg.trim_prefix("--peer-roots=")
 
 	if not FileAccess.file_exists(gc_rom):
 		_finish("no GameCube ROM at %s" % gc_rom)
@@ -204,6 +216,9 @@ func _ready() -> void:
 
 
 func _build_peer(index: int) -> void:
+	var my_root := root_dir
+	if not peer_roots.is_empty():
+		my_root = "%s/p%d" % [peer_roots, index]
 	var root := Node.new()
 	root.name = "P%d" % index
 	add_child(root)
@@ -220,7 +235,7 @@ func _build_peer(index: int) -> void:
 	console.name = "GC"
 	console.core_name = gc_core
 	console.rom = gc_rom
-	console.root = root_dir
+	console.root = my_root
 	console.is_console = true
 	nm.add_child(console)
 
@@ -231,7 +246,7 @@ func _build_peer(index: int) -> void:
 		hh.name = "GBA%d" % i
 		hh.core_name = gba_core
 		hh.rom = gba_rom            # empty = multiboot, the console uploads it
-		hh.root = root_dir
+		hh.root = my_root
 		nm.add_child(hh)
 		group.append(hh)
 		console.gba_ports.append(hh)
