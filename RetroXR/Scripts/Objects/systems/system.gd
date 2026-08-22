@@ -2780,7 +2780,10 @@ func net_play_reset() -> void:
 ## start-time options rather than swapped mid-run. Cores built before the option
 ## shipped ignore the key harmlessly, so this is safe on an older build.
 func _removable_media_options(core: String) -> Dictionary:
-	if not _uses_memory_cards() or not core.begins_with("pcsx_rearmed"):
+	# The PlayStation FAMILY, not merely any console with card slots. These keys
+	# are pcsx_rearmed's own and mean nothing to another console's core, so a
+	# GameCube must not write them into a .opt on the strength of having slots.
+	if _card_family() != "playstation" or not core.begins_with("pcsx_rearmed"):
 		return {}
 	return {
 		"pcsx_rearmed_memcard1": "libretro" if get_snapped_memcard(0) else "none",
@@ -3943,7 +3946,7 @@ func _on_memcard_removed(slot: int) -> void:
 ## presence key of its own, so a second slot has nothing to say here — which is
 ## fine, because no console with two slots runs on pcsx_rearmed.
 func _set_card_presence(slot: int, inserted: bool) -> void:
-	if not is_powered_on or not _uses_memory_cards():
+	if not is_powered_on or _card_family() != "playstation":
 		return
 	if slot != 0 or not _resolve_core().begins_with("pcsx_rearmed"):
 		return

@@ -1232,6 +1232,51 @@ func _test_memcard_presence() -> void:
 	_ok("memcard/presence on a machine that is off does nothing",
 		not psx.is_powered_on)
 
+	# A GameCube shows TWO slots, and takes a different family of card. The
+	# family is what keeps the two apart: every card is in one "memory_card"
+	# group, which scene persistence and the netplay sync both rely on, so
+	# splitting the group was never an option.
+	var gc := preload("res://Scenes/Objects/system.tscn").instantiate() as RetroSystem
+	gc.systemid = "gamecube"
+	add_child(gc)
+	_eq("memcard/a GameCube has two slots", gc._card_slot_count(), 2)
+	_eq("memcard/of the GameCube family", gc._card_family(), "gamecube")
+	_ok("memcard/and is told no pcsx_rearmed keys",
+		gc._removable_media_options("pcsx_rearmed").is_empty())
+
+	# A Wii takes GameCube cards, which is the whole reason a family is not a
+	# systemid: it plays GameCube discs and writes to the same card.
+	#
+	# Asked of the DESCRIPTOR rather than of a spawned Wii. Standing one up here
+	# loads its shell and hangs its flap hinges, and tearing that down at the end
+	# of the suite segfaults the engine on the way out -- which makes the exit
+	# code, the thing this file exists to provide, meaningless.
+	var wii_info := SystemInfo.for_system("wii")
+	_eq("memcard/a Wii takes GameCube cards", wii_info.card_family, "gamecube")
+	_eq("memcard/in two slots", wii_info.card_slots, 2)
+	_eq("memcard/resolving to the GameCube format",
+		CardFormats.for_system("wii").id(), "gamecube")
+
+	# The gate that stops a card going into the wrong machine.
+	var gc_card := preload("res://Scenes/Objects/media/gc_memory_card.tscn") 		.instantiate() as MemoryCard
+	var ps_card := preload("res://Scenes/Objects/media/memory_card.tscn") 		.instantiate() as MemoryCard
+	_eq("memcard/a GameCube card knows its family", gc_card.family, "gamecube")
+	_eq("memcard/and a PlayStation card knows its own", ps_card.family, "playstation")
+	_ok("memcard/a GameCube takes a GameCube card", gc._accepts_card(gc_card))
+	_ok("memcard/but not a PlayStation card", not gc._accepts_card(ps_card))
+	_ok("memcard/a PlayStation takes its own", psx._accepts_card(ps_card))
+	_ok("memcard/but not a GameCube card", not psx._accepts_card(gc_card))
+
+	# Paths are keyed by FAMILY, so a Wii and a GameCube reach the same card.
+	_eq("memcard/a Wii and a GameCube share a card folder",
+		SramPaths.cards_dir(wii_info.card_family),
+		SramPaths.cards_dir(gc._card_family()))
+	_ok("memcard/which is not the PlayStation's",
+		SramPaths.cards_dir("gamecube") != SramPaths.cards_dir("playstation"))
+
+	gc_card.free()
+	ps_card.free()
 	card.free()
 	nes.queue_free()
+	gc.queue_free()
 	psx.queue_free()
