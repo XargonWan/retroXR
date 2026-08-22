@@ -827,7 +827,7 @@ yet — this exercises the BUS, not a session over it.
 ### 3. Capturing a real screenshot on Linux (for visual validation)
 `--headless` uses the dummy renderer — it **cannot** produce a screenshot (a probe that awaits
 `RenderingServer.frame_post_draw` just hangs; `get_image()` is blank). To actually render a
-RetroXR scene on this box, run Godot **on the real display** (`DISPLAY=:0`, NVIDIA RTX 3080,
+RetroXR scene on this box, run Godot **on the real display** (`DISPLAY=:0`,
 Vulkan Forward+ — a window briefly appears on the desktop, ok'd for validation) and draw into a
 **`SubViewport`**, not the window viewport (the uncomposited window swapchain reads back as
 clear-colour only). Xvfb does not work here (bwrap/glycin abort in the sandbox). Recipe:
