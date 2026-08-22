@@ -34,7 +34,7 @@ const CORES: Dictionary = {
 		"verified": true,
 		"state_transfer": false,
 		"rollback": false,
-		"systems": ["game_boy_advance"],
+		"systems": ["game_boy_advance", "game_boy", "game_boy_color"],
 		"options": {},
 	},
 	"snes9x": {
