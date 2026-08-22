@@ -154,9 +154,11 @@ func get_controller_port_count() -> int:
 	return 2
 
 
-## CD-era hardware: saves live on a removable card, not on the media.
-func uses_memory_cards() -> bool:
-	return true
+## CD-era hardware: saves live on a removable card, not on the media. One slot
+## -- the shell moulds a second, but nothing in the room fills it and the core is
+## told memcard2 is absent either way.
+func card_slot_count() -> int:
+	return 1
 
 
 ## The shell models its own OPEN button and this model mounts a widget on it, so
@@ -629,8 +631,11 @@ func port_plug_transform(index: int) -> Transform3D:
 ## Measured rather than reasoned: the card's connector lip sits at z +27.5 mm in
 ## its own frame and its CardLabel faces its own +Y, so the card wants +Y kept up
 ## and +Z turned to face into the shell. That is a yaw.
-func configure_memory_card_slot(slot: Node3D) -> void:
-	if _glb == null or slot == null:
+func configure_memory_card_slot(slot: Node3D, index: int) -> void:
+	# Slot A only: this shell seats one card, and card_slot_count says so, but the
+	# base calls once per slot the machine shows and a stray index must not land a
+	# second card on top of the first.
+	if _glb == null or slot == null or index != 0:
 		return
 	var seat := find_child("MemCardSeat", true, false) as Node3D
 	if seat != null:
