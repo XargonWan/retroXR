@@ -25,10 +25,10 @@ const CORES: Dictionary = {
 	},
 	"gambatte": {
 		"verified": true,
-		"state_transfer": false,
+		"state_transfer": true,
 		"rollback": false,
 		"systems": ["game_boy", "game_boy_color"],
-		"options": {},
+		"options": {"gambatte_frame_dupe": "disabled"},
 	},
 	"mgba": {
 		"verified": true,

@@ -122,13 +122,20 @@ func _test_cores() -> void:
 
 	# TWO PROPERTIES. Cold-start determinism is what a session needs to PLAY;
 	# savestate reload fidelity is what a late join and a resync need. gambatte
-	# is the case that forced them apart: it reproduces exactly across two
-	# processes from frame 0 and fails 16 of 20 checkpoints after reloading its
-	# own state. Collapsing them either bars a core that plays fine or promises
-	# a late join that cannot work.
+	# is the case that forced them apart: it reproduced exactly across two
+	# processes from frame 0 while failing 16 of 20 checkpoints after reloading
+	# its own state. Collapsing them either bars a core that plays fine or
+	# promises a late join that cannot work, so they stay separate keys even
+	# though every core in the table now earns both.
 	_ok(NetplayCores.is_capable("gambatte"), "cores/gambatte can hold a session")
-	_ok(not NetplayCores.state_transfer_capable("gambatte"),
-		"cores/but cannot put a state on the wire")
+	# It earns the second one only with the frame-dupe pacing turned off, which
+	# is why the entry carries an option rather than just a flag: the dupe is
+	# emitted from a running total of audio samples that a state load resets, so
+	# a transferred state slipped one frame against the run it came from.
+	_ok(NetplayCores.state_transfer_capable("gambatte"),
+		"cores/and can put a state on the wire")
+	_ok(NetplayCores.forced_options("gambatte").get("gambatte_frame_dupe", "") == "disabled",
+		"cores/because netplay forces its frame pacing off")
 	_ok(NetplayCores.state_transfer_capable("fceumm"),
 		"cores/fceumm can do both")
 	_ok(not NetplayCores.state_transfer_capable("__never_vetted"),
