@@ -3,9 +3,14 @@
 [ext_resource type="Script" path="res://Scripts/Objects/media/memory_card.gd" id="1_memcardscript"]
 [ext_resource type="Script" path="res://Scripts/Objects/highlights/pickable_highlight.gd" id="2_pickhigh"]
 
-; 43 x 6 x 51 mm — a Nintendo GameCube Memory Card (DOL-014). Squatter and
-; thinner than the PlayStation's 42 x 8 x 63.5, which is the difference you can
-; see with the two side by side.
+; 43 x 6 x 51 mm — a Nintendo GameCube Memory Card (DOL-014). Wider, thinner and
+; shorter than the PlayStation's 38.2 x 7.4 x 56.0, which is the difference you
+; can see with the two side by side.
+;
+; Still procedural boxes where the PlayStation's card now wears a real model, so
+; the two do not sit at the same fidelity next to each other. Deliberate for now:
+; the shape and the colour are what tell them apart, and a GameCube card GLB
+; would have to be one this project has the right to ship.
 ;
 ; Same axis convention as the PlayStation card: the LONG axis is Z, the way the
 ; card goes into the slot. A GameCube card enters on its 43 mm edge and its
