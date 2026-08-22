@@ -55,6 +55,14 @@ var _allow_drop := false
 var _saved_by: Node3D = null
 var _desktop_held := false
 
+var _locomotion_manager: LocomotionManager = null
+## Per-INSTANCE, not a shared literal. The existing owner keys are shared strings
+## -- "retro_hold" belongs to the Wiimote and the TV remote at once -- and a block
+## is keyed on (channel, owner), so the second holder to let go clears the first
+## one's block. Two Nunchuks in a room is an ordinary thing here, so this one
+## carries its own key and cannot be cleared by another.
+var _block_owner: StringName
+
 # Motion
 var _prev_velocity := Vector3.ZERO
 var _accel_smoothed := Vector3.UP * G
@@ -83,8 +91,39 @@ func _ready() -> void:
 	_hint = HeldHint.attach(self, true, HINT_HEIGHT)
 	_c_rest = _c_button.transform
 	_z_rest = _z_button.transform
+	_block_owner = StringName("nunchuk_hold_%d" % get_instance_id())
 	_load_bindings()
 	_spawn_cable()
+	call_deferred("_find_locomotion")
+
+
+func _find_locomotion() -> void:
+	_locomotion_manager = get_tree().root.find_child(
+		"LocomotionManager", true, false) as LocomotionManager
+	# A Nunchuk spawned into a hand is grabbed before this resolves, so re-apply
+	# rather than waiting for the next grab to notice.
+	_update_locomotion_block()
+
+
+## Stop the holding hand's stick from also walking the player.
+##
+## The Nunchuk reads its stick straight off that controller's "primary" vector --
+## the same stick locomotion moves on -- so without this, using it drives the game
+## AND drags you across the room. The Wiimote has the same guard, but it blocks
+## the hand holding the REMOTE; the Nunchuk is in the other hand, which is very
+## often the movement one.
+##
+## Only the hand actually holding it is blocked, and only in VR: get_state()
+## returns a zero stick when there is no XR controller, so a desktop hold
+## contributes no input to conflict over and takes no channel away.
+func _update_locomotion_block() -> void:
+	if _locomotion_manager == null:
+		return
+	var ctrl_valid := is_instance_valid(_holding_ctrl)
+	_locomotion_manager.set_block(_block_owner, LocomotionManager.CHANNEL_LEFT,
+		ctrl_valid and _holding_ctrl.tracker == &"left_hand")
+	_locomotion_manager.set_block(_block_owner, LocomotionManager.CHANNEL_RIGHT,
+		ctrl_valid and _holding_ctrl.tracker == &"right_hand")
 
 
 func reload_bindings() -> void:
@@ -167,6 +206,7 @@ func _on_grabbed_signal(_pickable: Node3D, by: Node3D) -> void:
 	_saved_by = by
 	_holding_ctrl = ctrl
 	_set_model_visible(ctrl, false)
+	_update_locomotion_block()
 
 
 func _on_dropped_signal(_pickable: Node3D) -> void:
@@ -183,6 +223,7 @@ func _on_dropped_signal(_pickable: Node3D) -> void:
 	_saved_by = null
 	_holding_ctrl = null
 	_desktop_held = false
+	_update_locomotion_block()
 
 
 func _rehold() -> void:
@@ -196,6 +237,7 @@ func _rehold() -> void:
 		_set_model_visible(_holding_ctrl, true)
 		_saved_by = null
 		_holding_ctrl = null
+		_update_locomotion_block()
 		return
 	_saved_by.call("_pick_up_object", self)
 
@@ -222,12 +264,18 @@ func _drop_all() -> void:
 	_set_model_visible(_holding_ctrl, true)
 	_allow_drop = true
 	_holding_ctrl = null
+	_update_locomotion_block()
 	drop()
 
 
 func _exit_tree() -> void:
 	# Teardown is not a drop the player asked for, and the gate must not fight it.
 	_allow_drop = true
+	# clear_owner and not two set_block(false) calls: a Nunchuk freed mid-hold
+	# never reaches _on_dropped_signal, and a block left behind is a hand that
+	# can never walk again.
+	if _locomotion_manager != null:
+		_locomotion_manager.clear_owner(_block_owner)
 	super._exit_tree()
 
 
