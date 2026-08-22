@@ -2730,6 +2730,20 @@ func _check_crc(frame: int, machine_index: int) -> void:
 			print("[Netplay] DESYNC peer %d @frame %d (strike %d/%d)" %
 				[peer_id, frame, _strikes[peer_id], CRC_STRIKES])
 			desync_detected.emit(peer_id, frame)
+			if _strategy == NetplayCores.Strategy.DETERMINISM:
+				# Report and stop, on the FIRST disagreement. Under determinism
+				# there is no repair: the resync below ships a savestate, and
+				# these are the cores that cannot reproduce one. Striking three
+				# times and demoting would only mean the odd one out plays on
+				# with a divergent machine, sending input nobody applies.
+				#
+				# No blame with two peers, deliberately. The reference is the
+				# host's own CRC, so with one client "who is wrong" has no
+				# majority to answer it and naming the client would be a coin
+				# toss dressed up as a diagnosis.
+				var who := "peer %d" % peer_id if t.size() > 2 else "a peer"
+				stop("machines stopped agreeing at frame %d (%s)" % [frame, who])
+				return
 			if int(_strikes[peer_id]) >= CRC_STRIKES:
 				_spectators[peer_id] = true
 				print("[Netplay] peer %d demoted to spectator" % peer_id)

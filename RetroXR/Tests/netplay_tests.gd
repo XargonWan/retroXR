@@ -956,6 +956,36 @@ func _test_desync() -> void:
 	await _await_frames(5)
 	_free(w)
 
+	# ── Under determinism, there is nothing to repair with ────────────────────
+	# The strike-and-resync path above ships a savestate to put the odd one out
+	# back in step. A determinism session's cores cannot reproduce one, so the
+	# same three strikes would just mean the diverged peer plays on with a
+	# machine nobody else agrees with, sending input the host drops. Report the
+	# frame and stop, which is what Dolphin's own netplay does.
+	NetplayCores.debug_allow_unverified = true
+	var d := await _pair()
+	d.host_sys.machine_core = "dolphin"
+	d.client_sys.machine_core = "dolphin"
+	var reasons: Array = []
+	d.host_np.session_stopped.connect(func(r: String) -> void: reasons.append(r))
+	d.client_sys.lib.desync = true
+	d.host_np._pending_local_route[0] = [0x01, 0, 0, 0, 0]
+	d.client_np._pending_local_route[1] = [0x02, 0, 0, 0, 0]
+	d.host_nm.netplay_start_host(d.host_sys, "dolphin", "MD5", {0: 1, 1: d.client_id}, 3, -1)
+	_ok(await _until(func() -> bool: return d.host_np.is_running()),
+		"desync/a determinism session is running")
+	_eq(d.host_np._strategy, NetplayCores.Strategy.DETERMINISM,
+		"desync/and really is on determinism")
+	_ok(await _until(func() -> bool: return not reasons.is_empty(), 1800),
+		"desync/the first disagreement stops it, rather than striking three times")
+	_ok(str(reasons[-1] if not reasons.is_empty() else "").contains("frame"),
+		"desync/and the reason names the frame it happened on")
+	_ok(not d.host_np._spectators.has(d.client_id),
+		"desync/nobody is demoted, because nobody was repaired")
+	NetplayCores.debug_allow_unverified = false
+	await _await_frames(5)
+	_free(d)
+
 
 # ══ Late join ═════════════════════════════════════════════════════════════════
 
