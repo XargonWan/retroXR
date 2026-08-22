@@ -49,6 +49,22 @@ const CORES: Dictionary = {
 		"options": {},
 		"notes": "Game Boy / Color. Cold-start GREEN 2026-08-21: identical CRC streams across two processes on Pokemon Yellow, 30 distinct checkpoints. Savestate reload RED, 16/20 mismatches, so no late join. GB and GBC link verified over netplay the same day, two peers, 0 desyncs. NOTE: the first vetting run used Tools/gblink ROMs and passed with a CONSTANT CRC at every checkpoint - an oracle that cannot fail. Vet against a real game.",
 	},
+	"mgba": {
+		"verified": true,
+		# Two mismatches after a reload and then it RECONVERGES, which is a
+		# different animal from Dolphin's 16 of 16 and still disqualifying: two
+		# strikes of three, every resync, is a peer one hiccup from spectator.
+		# The round-trip probe puts 14 bytes in the state's first 400, offsets
+		# moving between runs, so it reads as clock leakage in a header.
+		"state_transfer": false,
+		"rollback": false,
+		# GBA only, because GBA is all that was measured. mGBA carries a Game
+		# Boy and a Game Boy Color as well, and vetting one system says nothing
+		# about the others - they are different drivers inside the same core.
+		"systems": ["game_boy_advance"],
+		"options": {},
+		"notes": "Game Boy Advance. Cold-start GREEN 2026-08-21: identical CRC streams across two processes on Super Mario Advance, 30 distinct checkpoints. Savestate reload RED, 2/20 mismatches which then reconverge, so no late join. FOUR handhelds on one wire verified over netplay the same day: all four at the identical frame on both peers, 0 desyncs.",
+	},
 	# Pending vetting with netplay_spike before they can be enabled:
 	"snes9x": {
 		"verified": false,

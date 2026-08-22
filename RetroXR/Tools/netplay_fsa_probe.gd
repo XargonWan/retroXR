@@ -161,7 +161,7 @@ func _ready() -> void:
 		elif arg.begins_with("--chain-rom="):
 			chain_rom = arg.trim_prefix("--chain-rom=")
 	# The whole reason this probe exists. See the note at the top.
-	NetplayCores.debug_allow_unverified = true
+	NetplayCores.debug_allow_unverified = not (mode == "gb" or mode == "gbc" or mode == "gba")
 
 	get_tree().create_timer(400.0).timeout.connect(func() -> void:
 		print("[fsa] TIMEOUT")
