@@ -1396,6 +1396,16 @@ func schedule_link_op(system: Object, op: int, members: Array, ports: Array) -> 
 		_np_link.rpc_id(peer_id, serial, op, member_ids, port_ids, frame)
 
 
+## Whether a state captured here can be restored by another peer. Every machine
+## on the bus has to manage it: a joiner that can restore three of four cores
+## resumes half a conversation, which is worse than not joining.
+func _state_transfer_possible() -> bool:
+	for spec: Dictionary in _machine_specs:
+		if not NetplayCores.state_transfer_capable(str(spec.get("core", ""))):
+			return false
+	return not _machine_specs.is_empty()
+
+
 ## True when `machine` is one of the machines this session is running, which is
 ## what decides whether a cable seated on it is the session's business.
 func covers(machine: Object) -> bool:
@@ -1940,6 +1950,18 @@ func _np_input_req(frame: int) -> void:
 ## Called by NetworkManager when a peer registers mid-session.
 func on_peer_joined(peer_id: int) -> void:
 	if not _nm.is_host() or not _running:
+		return
+	# Some cores play perfectly from a cold start and cannot reproduce their own
+	# savestate. For those a late join is not slow, it is impossible: the state
+	# would arrive intact and restore to a different machine. Say so once and
+	# leave the peer watching, rather than transferring megabytes to no end and
+	# calling it a timeout.
+	if not _state_transfer_possible():
+		if not _spectators.has(peer_id):
+			_spectators[peer_id] = true
+			print("[Netplay] peer %d stays a spectator: core '%s' cannot transfer a state"
+				% [peer_id, _core])
+		_ready_peers[peer_id] = true
 		return
 	if _join_paused or _join_capture_pending or not _pending.is_empty() \
 			or not _link_waiting.is_empty() \
@@ -2571,7 +2593,7 @@ func _check_crc(frame: int, machine_index: int) -> void:
 			if int(_strikes[peer_id]) >= CRC_STRIKES:
 				_spectators[peer_id] = true
 				print("[Netplay] peer %d demoted to spectator" % peer_id)
-			elif not _joining.has(peer_id):
+			elif not _joining.has(peer_id) and _state_transfer_possible():
 				# Auto-resync via the late-join savestate path.
 				on_peer_joined(peer_id)
 

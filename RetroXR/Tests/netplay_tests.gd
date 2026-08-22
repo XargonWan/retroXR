@@ -120,6 +120,37 @@ func _test_cores() -> void:
 	_ok(NetplayCores.forced_options("nonesuch").is_empty(),
 		"cores/an unknown core forces nothing")
 
+	# TWO PROPERTIES. Cold-start determinism is what a session needs to PLAY;
+	# savestate reload fidelity is what a late join and a resync need. gambatte
+	# is the case that forced them apart: it reproduces exactly across two
+	# processes from frame 0 and fails 16 of 20 checkpoints after reloading its
+	# own state. Collapsing them either bars a core that plays fine or promises
+	# a late join that cannot work.
+	_ok(NetplayCores.is_capable("gambatte"), "cores/gambatte can hold a session")
+	_ok(not NetplayCores.state_transfer_capable("gambatte"),
+		"cores/but cannot put a state on the wire")
+	_ok(NetplayCores.state_transfer_capable("fceumm"),
+		"cores/fceumm can do both")
+	_ok(not NetplayCores.state_transfer_capable("snes9x"),
+		"cores/an unvetted core can do neither")
+	_ok(not NetplayCores.state_transfer_capable("nonesuch"),
+		"cores/nor an unknown one")
+	# A core that cannot roll back must not be offered rollback, and gambatte
+	# cannot: rollback rewinds through a state every single frame.
+	_ok(not NetplayCores.rollback_capable("gambatte"),
+		"cores/gambatte does not roll back, because that is a state per frame")
+
+	# The debug override exists to let a core be MEASURED. Shipping it a state
+	# that will not restore measures nothing, so it must not reach across into
+	# state transfer — the one place the answer is already known to be no.
+	NetplayCores.debug_allow_unverified = true
+	_ok(NetplayCores.is_capable("dolphin"),
+		"cores/the override lets an unvetted core start")
+	_ok(not NetplayCores.state_transfer_capable("dolphin"),
+		"cores/but never lets it transfer a state")
+	NetplayCores.debug_allow_unverified = false
+	_ok(not NetplayCores.is_capable("dolphin"), "cores/and the override is off again")
+
 	# Every entry has to carry its provenance, or the table stops being evidence.
 	for core: String in NetplayCores.CORES:
 		_ok(not NetplayCores.notes(core).is_empty(),
