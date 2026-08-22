@@ -382,6 +382,12 @@ func _set_model_visible(ctrl: XRController3D, shown: bool) -> void:
 		ctrl.call("set_model_visible", shown)
 
 
+## Per-instance owner for the VR channels. Shared owner keys let one object
+## erase another's block -- see LocomotionManager.set_block for what that cost.
+func _vr_block_owner() -> StringName:
+	return StringName("retro_hold_%d" % get_instance_id())
+
+
 func _update_locomotion_block() -> void:
 	var secondary_ctrl := _get_secondary_ctrl()
 	var left_held := (is_instance_valid(_holding_ctrl)   and _holding_ctrl.tracker   == &"left_hand") \
@@ -389,8 +395,8 @@ func _update_locomotion_block() -> void:
 	var right_held := (is_instance_valid(_holding_ctrl)   and _holding_ctrl.tracker   == &"right_hand") \
 				   or (is_instance_valid(secondary_ctrl)  and secondary_ctrl.tracker  == &"right_hand")
 	if _locomotion_manager != null:
-		_locomotion_manager.set_block(&"retro_hold", LocomotionManager.CHANNEL_LEFT,  left_held)
-		_locomotion_manager.set_block(&"retro_hold", LocomotionManager.CHANNEL_RIGHT, right_held)
+		_locomotion_manager.set_block(_vr_block_owner(), LocomotionManager.CHANNEL_LEFT,  left_held)
+		_locomotion_manager.set_block(_vr_block_owner(), LocomotionManager.CHANNEL_RIGHT, right_held)
 	# The desktop side is ScrollLockCapture's: it blocks WASD only while captured,
 	# and losing the grip here makes it ineligible, which drops both.
 	if _capture:
@@ -488,8 +494,7 @@ func _exit_tree() -> void:
 			Input.stop_joy_vibration(device)
 		_pad_rumble_active = false
 	if _locomotion_manager != null:
-		_locomotion_manager.set_block(&"retro_hold", LocomotionManager.CHANNEL_LEFT, false)
-		_locomotion_manager.set_block(&"retro_hold", LocomotionManager.CHANNEL_RIGHT, false)
+		_locomotion_manager.clear_owner(_vr_block_owner())
 	if _capture:
 		_capture.release()
 		# _process will not run again, so the global map has to go back now.

@@ -236,12 +236,17 @@ func _exit_tree() -> void:
 	if _blocking_right and is_instance_valid(_right_vr_ctrl):
 		_update_pointer_block(_right_vr_ctrl, false)
 	if _locomotion_manager != null:
-		_locomotion_manager.set_block(&"retro_hold", LocomotionManager.CHANNEL_LEFT, false)
-		_locomotion_manager.set_block(&"retro_hold", LocomotionManager.CHANNEL_RIGHT, false)
+		_locomotion_manager.clear_owner(_vr_block_owner())
 		_locomotion_manager.set_block(_desktop_block_owner(),
 			LocomotionManager.CHANNEL_DESKTOP_MOVE, false)
 	_allow_drop = true
 	super._exit_tree()
+
+
+## Per-instance owner for the VR channels. Shared owner keys let one object
+## erase another's block -- see LocomotionManager.set_block for what that cost.
+func _vr_block_owner() -> StringName:
+	return StringName("retro_hold_%d" % get_instance_id())
 
 
 func _update_locomotion_block() -> void:
@@ -249,8 +254,8 @@ func _update_locomotion_block() -> void:
 	var right_held := is_instance_valid(_holding_ctrl) and _holding_ctrl.tracker == &"right_hand"
 	var desktop_claim := _desktop_held and _connected_system != null and _port_index >= 0
 	if _locomotion_manager != null:
-		_locomotion_manager.set_block(&"retro_hold", LocomotionManager.CHANNEL_LEFT,  left_held)
-		_locomotion_manager.set_block(&"retro_hold", LocomotionManager.CHANNEL_RIGHT, right_held)
+		_locomotion_manager.set_block(_vr_block_owner(), LocomotionManager.CHANNEL_LEFT,  left_held)
+		_locomotion_manager.set_block(_vr_block_owner(), LocomotionManager.CHANNEL_RIGHT, right_held)
 	# Desktop has no hands, so the tracker tests above never fire there. The
 	# desktop providers poll the InputMap, so blocking them is the only way to
 	# stop WASD reaching the player while this device is claiming it.

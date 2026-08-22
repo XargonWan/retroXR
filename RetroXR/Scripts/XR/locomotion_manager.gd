@@ -75,6 +75,21 @@ func _require(provider_name: String) -> Node:
 	return node
 
 
+## Block or release one channel for one owner.
+##
+## `block_owner` MUST be unique per object whenever more than one object of a
+## kind can be holding a block at once. A block is keyed on (channel, owner) and
+## `active = false` ERASES that key, so two objects sharing a literal overwrite
+## each other -- and because the held peripherals each write BOTH VR channels
+## from whichever hand is holding THEM, sharing means the last one to update
+## wins and the loser's block is simply gone.
+##
+## That is not hypothetical: the Wiimote, the TV remote, the light gun and the
+## retro controller all passed &"retro_hold" here. Holding a Wiimote and then
+## putting down a TV remote erased the Wiimote's block outright, with nothing to
+## restore it until the Wiimote itself was re-grabbed -- and all four read their
+## own input off that hand's thumbstick, so the player walked while playing.
+## They now pass `_vr_block_owner()`, which folds in the instance id.
 func set_block(block_owner: StringName, channel: StringName, active: bool) -> void:
 	match channel:
 		CHANNEL_LEFT:

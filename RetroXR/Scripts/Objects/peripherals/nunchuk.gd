@@ -56,12 +56,6 @@ var _saved_by: Node3D = null
 var _desktop_held := false
 
 var _locomotion_manager: LocomotionManager = null
-## Per-INSTANCE, not a shared literal. The existing owner keys are shared strings
-## -- "retro_hold" belongs to the Wiimote and the TV remote at once -- and a block
-## is keyed on (channel, owner), so the second holder to let go clears the first
-## one's block. Two Nunchuks in a room is an ordinary thing here, so this one
-## carries its own key and cannot be cleared by another.
-var _block_owner: StringName
 
 # Motion
 var _prev_velocity := Vector3.ZERO
@@ -91,7 +85,6 @@ func _ready() -> void:
 	_hint = HeldHint.attach(self, true, HINT_HEIGHT)
 	_c_rest = _c_button.transform
 	_z_rest = _z_button.transform
-	_block_owner = StringName("nunchuk_hold_%d" % get_instance_id())
 	_load_bindings()
 	_spawn_cable()
 	call_deferred("_find_locomotion")
@@ -116,13 +109,19 @@ func _find_locomotion() -> void:
 ## Only the hand actually holding it is blocked, and only in VR: get_state()
 ## returns a zero stick when there is no XR controller, so a desktop hold
 ## contributes no input to conflict over and takes no channel away.
+## Per-instance owner for the VR channels. Shared owner keys let one object
+## erase another's block -- see LocomotionManager.set_block for what that cost.
+func _vr_block_owner() -> StringName:
+	return StringName("retro_hold_%d" % get_instance_id())
+
+
 func _update_locomotion_block() -> void:
 	if _locomotion_manager == null:
 		return
 	var ctrl_valid := is_instance_valid(_holding_ctrl)
-	_locomotion_manager.set_block(_block_owner, LocomotionManager.CHANNEL_LEFT,
+	_locomotion_manager.set_block(_vr_block_owner(), LocomotionManager.CHANNEL_LEFT,
 		ctrl_valid and _holding_ctrl.tracker == &"left_hand")
-	_locomotion_manager.set_block(_block_owner, LocomotionManager.CHANNEL_RIGHT,
+	_locomotion_manager.set_block(_vr_block_owner(), LocomotionManager.CHANNEL_RIGHT,
 		ctrl_valid and _holding_ctrl.tracker == &"right_hand")
 
 
@@ -275,7 +274,7 @@ func _exit_tree() -> void:
 	# never reaches _on_dropped_signal, and a block left behind is a hand that
 	# can never walk again.
 	if _locomotion_manager != null:
-		_locomotion_manager.clear_owner(_block_owner)
+		_locomotion_manager.clear_owner(_vr_block_owner())
 	super._exit_tree()
 
 
