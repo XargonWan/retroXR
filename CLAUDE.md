@@ -768,6 +768,38 @@ stops dead.** That second leg is the reproduction, and a green there would mean
 the bus had stopped waiting, which is worse than the hang: a cabled netplay pair
 would desync instead of stalling.
 
+`RetroXR/Tools/gc_gba_link_probe.tscn` is the same thing for the ASYMMETRIC
+lead, which had been reasoned about and unit-tested and never once run with the
+cores that actually speak the JOY bus. It wants Dolphin, mGBA and two commercial
+ROMs, so it is a probe. It reproduces what `GcGbaCable` does on seating, in
+order: `SetControllerPortDevice(port, (7 << 8) | 0)` then
+`LinkConnect(gba, console_port, GBA_JOY_PORT)`.
+
+```bash
+"$godot" --headless --path RetroXR res://Tools/gc_gba_link_probe.tscn
+"$godot" --headless --path RetroXR res://Tools/gc_gba_link_probe.tscn -- --gba-empty
+```
+
+First run, 2026-08-21, Four Swords Adventures against Super Mario Advance:
+Dolphin attaches `gba-joy-1` at 486 MHz, mGBA at 16777216 Hz, `bus 0 [P1 on,
+P2 on]`, peers 2/2, and **6247/6248 messages** over 1574 frames with both cores
+in step. So the console-port end of the lead works with real cores.
+
+**`--gba-empty` is the pairing the game actually wants**, and the difference is
+stark: with no cartridge in the handheld the same run trades **82407/82408**
+messages, thirteen times as many. Four Swords Adventures uses the GBA as a
+screen and pad and uploads its own program over the wire, so a handheld holding
+its own commercial cartridge is a legitimate cabling but not a conversation
+either title was written for. Do not read a low byte count in the cartridge case
+as a fault.
+
+The `LinkCoordinator` cost report at teardown is worth reading either way: this
+pairing logged a 380 ms worst stall on the console and 1021 ms on the handheld,
+with 1.5 M parked advance calls. The bus works; it is not cheap.
+
+Neither core is in `NetplayCores`, so none of this can start a netplay session
+yet — this exercises the BUS, not a session over it.
+
 ### 3. Capturing a real screenshot on Linux (for visual validation)
 `--headless` uses the dummy renderer — it **cannot** produce a screenshot (a probe that awaits
 `RenderingServer.frame_post_draw` just hangs; `get_image()` is blank). To actually render a
