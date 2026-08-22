@@ -49,7 +49,7 @@ signal auto_save_changed(enabled: bool)
 ## Emitted when any performance-HUD switch or its mount changed. The listener
 ## re-reads AppPrefs rather than being told which one.
 signal hud_changed
-## Emitted when the user toggles the ray gun aim crosshair.
+## Emitted when the user toggles the light gun aim crosshair.
 signal aim_crosshair_changed(enabled: bool)
 ## True to aim a teleport with the left stick, false to slide with it.
 signal locomotion_mode_changed(teleport: bool)

@@ -32,7 +32,7 @@ const PAD_RECEIVER_SCENE    := preload("res://Scenes/Objects/controllers/pad_rec
 # The same dongle for the real keyboard and mouse. VR only — see spawn_view.
 const KEYBOARD_RECEIVER_SCENE := preload("res://Scenes/Objects/controllers/keyboard_receiver.tscn")
 const MOUSE_RECEIVER_SCENE    := preload("res://Scenes/Objects/controllers/mouse_receiver.tscn")
-const RAY_GUN_SCENE         := preload("res://Scenes/Objects/peripherals/ray_gun.tscn")
+const LIGHT_GUN_SCENE       := preload("res://Scenes/Objects/peripherals/light_gun.tscn")
 const WIIMOTE_SCENE         := preload("res://Scenes/Objects/controllers/wii/wiimote.tscn")
 const NUNCHUK_SCENE         := preload("res://Scenes/Objects/controllers/wii/nunchuk.tscn")
 const MOTION_PLUS_SCENE     := preload("res://Scenes/Objects/controllers/wii/motion_plus.tscn")
@@ -1115,8 +1115,8 @@ func _on_spawn_requested(type: String) -> void:
 			obj = KEYBOARD_RECEIVER_SCENE.instantiate() as Node3D
 		"mouse_receiver":
 			obj = MOUSE_RECEIVER_SCENE.instantiate() as Node3D
-		"ray_gun":
-			var gun := RAY_GUN_SCENE.instantiate() as RayGun
+		"light_gun":
+			var gun := LIGHT_GUN_SCENE.instantiate() as LightGun
 			gun.show_laser_dot = _aim_crosshair_enabled
 			obj = gun
 		_:

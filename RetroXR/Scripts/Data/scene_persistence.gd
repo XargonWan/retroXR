@@ -62,7 +62,7 @@ const MEMCARD_SCENE          := preload("res://Scenes/Objects/media/memory_card.
 const BOOK_SCENE             := preload("res://Scenes/Objects/media/pdf_book.tscn")
 const POSTER_SCENE           := preload("res://Scenes/Objects/media/poster.tscn")
 const RETRO_CONTROLLER_SCENE := preload("res://Scenes/Objects/controllers/retro_controller.tscn")
-const RAY_GUN_SCENE          := preload("res://Scenes/Objects/peripherals/ray_gun.tscn")
+const LIGHT_GUN_SCENE        := preload("res://Scenes/Objects/peripherals/light_gun.tscn")
 const VCR_SCENE              := preload("res://Scenes/Objects/appliances/vcr_player.tscn")
 const TAPE_SCENE             := preload("res://Scenes/Objects/media/vcr_tape.tscn")
 const DVD_SCENE              := preload("res://Scenes/Objects/appliances/dvd_player.tscn")
@@ -101,7 +101,9 @@ const MOUSE_RECEIVER_SCENE    := preload("res://Scenes/Objects/controllers/mouse
 const PLAIN_SCENES := {
 	"tv_remote": TV_REMOTE_SCENE,
 	"trash_can": TRASH_CAN_SCENE,
-	"ray_gun": RAY_GUN_SCENE,
+	"light_gun": LIGHT_GUN_SCENE,
+	# Slots written before the rename say "ray_gun".
+	"ray_gun": LIGHT_GUN_SCENE,
 	"retro_keyboard": RETRO_KEYBOARD_SCENE,
 	"vcr_player": VCR_SCENE,
 	"dvd_player": DVD_SCENE,
@@ -109,7 +111,7 @@ const PLAIN_SCENES := {
 	"cassette_player": CASSETTE_PLAYER_SCENE,
 	# Both Wii objects instantiate from here; the remote's pairing and its seated
 	# Nunchuk are applied afterwards by the peripheral arm of _apply_references,
-	# exactly as the ray gun's port connection is. The Nunchuk carries no port of
+	# exactly as the light gun's port connection is. The Nunchuk carries no port of
 	# its own — it is wired to a remote, and that seating is restored from the
 	# REMOTE's entry, not from this one.
 	"wiimote": WIIMOTE_SCENE,
@@ -1048,7 +1050,7 @@ func _restore_entry(root: Node, id: int, spawned: Dictionary, entries: Dictionar
 			push_warning("[ScenePersistence] pad receiver id=%d: system not found" % id)
 			return
 		(obj as InputReceiver).restore_port_connection(rx_sys, rx_port)
-	elif obj is RetroController or obj is RayGun or obj is RetroMouse \
+	elif obj is RetroController or obj is LightGun or obj is RetroMouse \
 			or obj is RetroKeyboard or obj is Wiimote:
 		# The remote's Nunchuk is restored whether or not it was paired to a
 		# console — an unpaired remote can still have one plugged into it.
@@ -1349,7 +1351,7 @@ func _serialize_node(node: Node, id: int, node_to_id: Dictionary) -> Dictionary:
 			"album_path": acass.album_path,
 			"album_label": acass.album_label,
 		})
-	elif node is RetroController or node is RayGun or node is RetroMouse \
+	elif node is RetroController or node is LightGun or node is RetroMouse \
 			or node is RetroKeyboard or node is Wiimote:
 		return _serialize_peripheral(node, id, n3d, node_to_id)
 	elif node is SpeakerPair:
@@ -1407,8 +1409,8 @@ func _serialize_peripheral(node: Node, id: int, n3d: Node3D, node_to_id: Diction
 	var obj_type := "retro_controller"
 	if node is Wiimote:
 		obj_type = "wiimote"
-	elif node is RayGun:
-		obj_type = "ray_gun"
+	elif node is LightGun:
+		obj_type = "light_gun"
 	elif node is SnesMouse:
 		# Before the RetroMouse arm, which it also satisfies — reaching that
 		# first would save the SNES mouse as the primitive one and hand the

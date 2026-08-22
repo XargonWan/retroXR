@@ -76,7 +76,7 @@ const COLOR_HILITE          := Color(0.62, 0.10, 0.22, 0.7)
 ## name glyphs by key.
 
 ## Desktop mode: lock to the camera lower-right pointing straight ahead
-## (FPS-style, same as the RayGun — read by desktop_pickup.gd). Drop with
+## (FPS-style, same as the LightGun — read by desktop_pickup.gd). Drop with
 ## Shift+click while snapped.
 var desktop_fps_snap: bool = true
 
@@ -85,7 +85,7 @@ var desktop_fps_snap: bool = true
 const HINT_HEIGHT := 0.26
 var _hint: HeldHint = null
 
-# Toggle-hold state (mirrors RayGun)
+# Toggle-hold state (mirrors LightGun)
 var _allow_drop := false
 var _saved_by: Node3D = null
 var _holding_ctrl: XRController3D = null
@@ -168,7 +168,7 @@ func _find_vr_nodes() -> void:
 	_update_locomotion_block()
 
 
-# ── Toggle-hold (mirrors RayGun) ──────────────────────────────────────────────
+# ── Toggle-hold (mirrors LightGun) ────────────────────────────────────────────
 
 func _on_grabbed_signal(_pickable: Node3D, by: Node3D) -> void:
 	if _hint:

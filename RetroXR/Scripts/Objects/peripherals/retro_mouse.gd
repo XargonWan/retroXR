@@ -50,7 +50,7 @@ const STICK_BREAK := 0.07
 var device_type: int = RETRO_DEVICE_MOUSE
 
 ## Desktop: plain left-click is the mouse's own LEFT button while held, so
-## dropping requires Shift+click (same rule as the ray gun's trigger).
+## dropping requires Shift+click (same rule as the light gun's trigger).
 var desktop_shift_drop := true
 
 ## Height of the drop hint above the mouse, in metres.

@@ -4,7 +4,7 @@ class_name ControllerPlug
 extends XRToolsPickable
 
 
-## The controller (RetroController or RayGun) that owns this plug.
+## The controller (RetroController or LightGun) that owns this plug.
 var _controller: Node3D = null
 var _plugged_in := false
 
@@ -55,7 +55,7 @@ func get_tether() -> Dictionary:
 	}
 
 
-## Returns the owning controller (RetroController or RayGun).
+## Returns the owning controller (RetroController or LightGun).
 func get_controller() -> Node3D:
 	return _controller
 

@@ -1546,7 +1546,7 @@ func _populate_controllers_tab() -> void:
 	_controllers_vbox.add_child(MenuStyle.spacer(10))
 	for item: Array in [
 			["Primitive Controller", "retro_controller"],
-			["Ray Gun",            "ray_gun"],
+			["Light Gun",          "light_gun"],
 			["Mouse",              "retro_mouse"],
 			["Keyboard",           "retro_keyboard"],
 			["Wiimote",            "wiimote"],

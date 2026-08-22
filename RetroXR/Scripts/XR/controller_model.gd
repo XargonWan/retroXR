@@ -2,7 +2,7 @@ class_name ControllerModel
 extends XRController3D
 
 ## Global toggle for the wrap-around hand shown on held peripherals (mouse, retro
-## controller, ray gun…). When false the device hand is never drawn; the
+## controller, light gun…). When false the device hand is never drawn; the
 ## controller art fades out on a grab either way. Default off; flipped by the
 ## OPTIONS menu via SpawnMenuController. Static so the two rig controllers and
 ## the menu all share one value.

@@ -292,7 +292,7 @@ emission_enabled = true
 emission = Color(0.7, 0.85, 1, 1)
 emission_energy_multiplier = 2.0
 
-; Laser target, generous like the ray gun's — a remote is a slim thing to hit
+; Laser target, generous like the light gun's — a remote is a slim thing to hit
 ; with a beam from across the room, and this only ever answers the pointer.
 [sub_resource type="BoxShape3D" id="BoxShape3D_pointer"]
 size = Vector3(0.06, 0.06, 0.17)
@@ -572,7 +572,7 @@ surface_material_override/0 = SubResource("Mat_led")
 
 ; Hinged at the trigger's FRONT edge — its nose end — which is where the real one
 ; pivots. The sign is unchanged (-16 degrees about local X, TRIGGER_PULL_DEG) and
-; so is the ray gun's arrangement it was copied from; what moved is the axis.
+; so is the light gun's arrangement it was copied from; what moved is the axis.
 ;
 ; It used to sit at (0, -0.0135, -0.03), which after the shell gained its taper was
 ; 88% of the way along the fin — near its BACK. Rotating about a point at the back

@@ -1,4 +1,4 @@
-## RayGun — pickable light-gun that plugs into a RetroSystem controller port.
+## LightGun — pickable light gun that plugs into a RetroSystem controller port.
 ## While held and plugged in: casts a ray from the barrel to the TV screen each
 ## frame and reports the hit position as libretro lightgun coordinates.
 ## Button mappings are data-driven via ControllerBindings.
@@ -9,7 +9,7 @@
 ##   crosshair reticle always matches where the gun is pointing.
 ##   Trigger  = left mouse button  (trigger_left action)
 ##   Aux/dpad = RETRO_JOYPAD_* keyboard actions
-class_name RayGun
+class_name LightGun
 extends XRToolsPickable
 
 
@@ -387,7 +387,7 @@ func on_plugged_in(system: RetroSystem, port_index: int) -> void:
 	_port_index = port_index
 	_laser_dot.visible = true
 	_load_bindings()
-	print("[RayGun] plugged into system port %d" % port_index)
+	print("[LightGun] plugged into system port %d" % port_index)
 	_cache_screen_geometry()
 
 
@@ -405,7 +405,7 @@ func _load_bindings() -> void:
 
 
 func on_unplugged() -> void:
-	print("[RayGun] unplugged from port %d" % _port_index)
+	print("[LightGun] unplugged from port %d" % _port_index)
 	_laser_dot.visible = false
 	_connected_system = null
 	_port_index = -1

@@ -504,14 +504,14 @@ func _build_general_options(vbox: VBoxContainer) -> void:
 
 		vbox.add_child(HSeparator.new())
 
-	# Ray Gun crosshair option
+	# Light Gun crosshair option
 	var xhair_row := HBoxContainer.new()
 	xhair_row.add_theme_constant_override("separation", 10)
 	xhair_row.custom_minimum_size = Vector2(0, 68)
 	vbox.add_child(xhair_row)
 
 	var xhair_lbl := Label.new()
-	xhair_lbl.text = "Ray Gun Crosshair"
+	xhair_lbl.text = "Light Gun Crosshair"
 	xhair_lbl.add_theme_font_size_override("font_size", 22)
 	xhair_lbl.add_theme_color_override("font_color", MenuStyle.COLOR_TITLE)
 	xhair_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL

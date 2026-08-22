@@ -1,6 +1,6 @@
 [gd_scene format=3 uid="uid://c4t1vrhcvr83p"]
 
-[ext_resource type="Script" uid="uid://cl6rvec4e02r5" path="res://Scripts/Objects/peripherals/ray_gun.gd" id="1_gunscript"]
+[ext_resource type="Script" uid="uid://cl6rvec4e02r5" path="res://Scripts/Objects/peripherals/light_gun.gd" id="1_gunscript"]
 [ext_resource type="Script" uid="uid://myg1jnlsxhnm" path="res://Scripts/Objects/highlights/pickable_highlight.gd" id="2_pickhigh"]
 [ext_resource type="Script" uid="uid://b8uwrf51jd5xm" path="res://addons/godot-xr-tools/objects/grab_points/grab_point.gd" id="3_grabpoint"]
 [ext_resource type="PackedScene" path="res://Scenes/Objects/hand_poses/hand_pistol_right.tscn" id="4_rhand"]
@@ -54,7 +54,7 @@ emission_energy_multiplier = 2.0
 [sub_resource type="BoxShape3D" id="BoxShape3D_pointer"]
 size = Vector3(0.06, 0.15, 0.22)
 
-[node name="RayGun" type="RigidBody3D" unique_id=118498511 groups=["hand_held_device"]]
+[node name="LightGun" type="RigidBody3D" unique_id=118498511 groups=["hand_held_device"]]
 collision_layer = 4
 collision_mask = 196613
 mass = 0.3

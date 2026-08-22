@@ -4,7 +4,7 @@ Which real hardware RetroXR models, and which it doesn't yet. Split by kind so
 each file stays readable.
 
 Real hardware only. RetroXR's own props — the generic pad, cartridge, disc,
-memory card, multitap, keyboard/mouse, ray gun and controller cable — are not
+memory card, multitap, keyboard/mouse, light gun and controller cable — are not
 listed: nothing here corresponds to them, and counting them as implemented only
 inflated the totals.
 

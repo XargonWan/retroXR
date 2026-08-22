@@ -17,7 +17,7 @@ var rom := _home + "/retroxr/roms/nes/Duck Hunt (World).nes"
 ## [device id, what it is]
 const CASES: Array = [
 	[-1,  "untouched — whatever the core chose when the game loaded"],
-	[7,   "RETRO_DEVICE_LIGHTGUN — what RayGun announces today"],
+	[7,   "RETRO_DEVICE_LIGHTGUN — what LightGun announces today"],
 	[258, "fceumm ZAPPER = SUBCLASS(MOUSE, 0)"],
 	[1,   "AUTO = JOYPAD — game-database auto-detect"],
 	[513, "fceumm GAMEPAD = SUBCLASS(JOYPAD, 1)"],

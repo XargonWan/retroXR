@@ -11,7 +11,7 @@
 ##                       (right = clockwise). (Disabled for FPS-snap objects.)
 ##
 ## FPS-snap mode:
-##   Objects with a truthy "desktop_fps_snap" property (e.g. the RayGun) are
+##   Objects with a truthy "desktop_fps_snap" property (e.g. the LightGun) are
 ##   locked to a fixed lower-right offset from the camera instead of floating
 ##   freely on the ray.  This gives an FPS-style weapon view.  The hand pivot's
 ##   orientation matches the camera so the weapon always aims where you look.
@@ -79,7 +79,7 @@ func _ready() -> void:
 	# Invisible pivot that the grabbed object follows.
 	# Uses DesktopHandPivot script to satisfy XRToolsPickable's grabber interface
 	# (picked_up_ranged property + drop_object() callback).
-	# Placed in the "desktop_hand" group so ray_gun.gd / retro_controller.gd
+	# Placed in the "desktop_hand" group so light_gun.gd / retro_controller.gd
 	# can detect desktop-grab in their _on_grabbed_signal handlers.
 	var pivot_script := load("res://Scripts/Desktop/desktop_hand_pivot.gd")
 	_hand_pivot = Node3D.new()
@@ -117,7 +117,7 @@ func _unhandled_input(event: InputEvent) -> void:
 						# Shift+click drops any held object.
 						# Plain click also drops non-FPS-snap objects (books, controllers, etc.)
 						# so the user doesn't need Shift for those.
-						# FPS-snap objects (ray gun) require Shift+click to drop because
+						# FPS-snap objects (light gun) require Shift+click to drop because
 						# plain left-click is the shoot/trigger action while the gun is held.
 						# Objects with desktop_shift_drop (mouse) do too — plain click is
 						# their own LEFT button while held.
@@ -352,7 +352,7 @@ func _is_fps_snap() -> bool:
 
 
 ## True when the held object claims plain left-click as its own input
-## (RetroMouse) — dropping then needs Shift+click, like the ray gun.
+## (RetroMouse) — dropping then needs Shift+click, like the light gun.
 func _needs_shift_drop() -> bool:
 	return _held_object != null and _held_object.get("desktop_shift_drop") == true
 

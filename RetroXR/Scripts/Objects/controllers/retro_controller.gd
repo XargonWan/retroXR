@@ -44,7 +44,7 @@ var device_type: int = RETRO_DEVICE_JOYPAD
 ## the same way the cartridge slot only accepts media for its own system.
 ##
 ## Empty means UNIVERSAL and fits anything — that is deliberate for RetroXR's own
-## props (the generic pad, keyboard, mouse, multitap, ray gun), which stand in for
+## props (the generic pad, keyboard, mouse, multitap, light gun), which stand in for
 ## hardware we have no model of and must keep working on every system.
 @export var systemid: String = ""
 

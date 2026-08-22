@@ -3301,7 +3301,7 @@ func _on_rumble_state_changed(port: int, weak: float, strong: float) -> void:
 ## Does this object belong to this system, per one of the compatibility tables?
 ##
 ## An object that names no system is universal and always fits — RetroXR's own
-## props (generic pad, keyboard, mouse, multitap, ray gun) stand in for hardware
+## props (generic pad, keyboard, mouse, multitap, light gun) stand in for hardware
 ## we have no model of, so locking them to one system would strand every console
 ## that has no dedicated pad yet, and unlabelled legacy media keeps working.
 ##

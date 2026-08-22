@@ -67,7 +67,7 @@ const CAMERA_RES_Y := 768.0
 const CAMERA_FOV_X_DEG := 42.0
 const CAMERA_AR := 4.0 / 3.0
 
-## Input thresholds per XRController float input name (shared with RayGun).
+## Input thresholds per XRController float input name (shared with LightGun).
 const INPUT_THRESHOLDS: Dictionary = {
 	"trigger":       0.3,
 	"grip":          0.3,
@@ -110,7 +110,7 @@ const DESKTOP_DPAD: Dictionary = {
 const COVER_OPEN_DEG := 45.0
 
 ## The trigger's swing. Negative about +X so the blade sweeps back toward the
-## palm, same sign and reasoning as the ray gun's. (The face caps set their own
+## palm, same sign and reasoning as the light gun's. (The face caps set their own
 ## travel in the scene — they are VRButtons and move themselves.)
 const TRIGGER_PULL_DEG := -16.0
 const ANIM_WEIGHT := 0.4
@@ -155,7 +155,7 @@ var show_laser_dot: bool = true
 
 ## Desktop: park the remote in the lower-right of the view instead of floating it
 ## on the grab ray, and aim from the camera centre — the same FPS-weapon handling
-## the ray gun uses (desktop_pickup._is_fps_snap reads this).
+## the light gun uses (desktop_pickup._is_fps_snap reads this).
 ##
 ## Without it the remote hangs in the middle of the screen on the ray, directly in
 ## front of the very thing it is pointing at. The aim was already working; the
@@ -302,7 +302,7 @@ const DPAD_THRESHOLD := 0.35
 
 
 ## The remote is aimed and fired from the hand holding it, so the push-out
-## gesture has nothing to bind to. Same call the ray gun makes.
+## gesture has nothing to bind to. Same call the light gun makes.
 func wants_ray_handoff() -> bool:
 	return false
 
@@ -644,7 +644,7 @@ func _set_device_type(dev: int) -> void:
 			% [_port_index, device_type])
 
 
-# ── Toggle-hold (mirrors RayGun) ──────────────────────────────────────────────
+# ── Toggle-hold (mirrors LightGun) ────────────────────────────────────────────
 
 func _on_grabbed_signal(_pickable: Node3D, by: Node3D) -> void:
 	if _hint:
@@ -1208,7 +1208,7 @@ func _physics_process(delta: float) -> void:
 ##
 ## The desktop is the exception: there the remote is snapped in front of the
 ## camera rather than held, so its own barrel says nothing about where the player
-## is looking. The view aims instead — the same substitution the ray gun makes.
+## is looking. The view aims instead — the same substitution the light gun makes.
 func _camera_pose() -> Transform3D:
 	if _desktop_held:
 		var cam := get_viewport().get_camera_3d()
