@@ -2768,6 +2768,14 @@ func reset() -> void:
 		if NetworkManager.netplay_running() and NetworkManager.netplay_covers(self):
 			if NetworkManager.is_client():
 				NetworkManager.report_event(NetObjectSync.EV_SYS_RESET, {"sys": self})
+			elif not NetworkManager.netplay_pending_joins().is_empty():
+				# Somebody is stood there holding a pad this session cannot give
+				# them. A scheduled retro_reset would not admit them: it keeps the
+				# session, and with it the ownership decided when it started. So
+				# RESET means something stronger while a claim is waiting -- start
+				# the game again with everybody in it, which is the only way in
+				# for a core that cannot hand over a savestate.
+				NetworkManager.netplay_rejoin_restart(self)
 			else:
 				NetworkManager.netplay_schedule_reset(self)
 			return

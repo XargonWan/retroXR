@@ -1206,6 +1206,51 @@ func _test_join() -> void:
 	_ok(g.host_np.is_running(),
 		"join/and the game the others are playing carries on")
 
+	# ── Reaching for a pad is how they ask ────────────────────────────────────
+	# Ownership follows whoever is HOLDING a controller, so picking one up is
+	# already the gesture for taking a turn. A spectator doing it used to be
+	# dropped on the floor by the same line that stops a departed peer owning a
+	# port. It is the one moment we know somebody wants in.
+	var late_id := _other_id(g.host_nm, g.client_id)
+	var asked: Array = []
+	g.host_np.join_requested.connect(func(pid: int, port: int) -> void: asked.append([pid, port]))
+	g.host_np.handoff_port(g.host_sys, 0, late_id)
+	_eq(asked.size(), 1, "join/a spectator reaching for a pad asks to play")
+	_eq(int(asked[0][0]) if not asked.is_empty() else -1, late_id,
+		"join/and the machine knows who it was")
+	_ok(g.host_np.pending_join_peers().has(late_id),
+		"join/the request waits for somebody to act on it")
+
+	# The other half. A player already in the game picking up a pad must still
+	# just take the port, or this reads as "every grab is a join request".
+	var before := g.host_np.pending_join_peers().size()
+	g.host_np.handoff_port(g.host_sys, 0, g.client_id)
+	_eq(g.host_np.pending_join_peers().size(), before,
+		"join/a player already in the game is handed the port, not queued")
+
+	# Asking twice is still one person waiting.
+	g.host_np.handoff_port(g.host_sys, 1, late_id)
+	_eq(g.host_np.pending_join_peers().size(), 1,
+		"join/asking again does not queue them twice")
+
+	# What RESET does while somebody is waiting: start the game again with them
+	# in it. A scheduled retro_reset would keep the session, and with it the
+	# ownership decided before they arrived.
+	#
+	# The mechanism, not the button. RetroSystem.reset() picks this over
+	# netplay_schedule_reset when a claim is pending, and MockSys is not a
+	# RetroSystem, so the dispatch itself is only exercised on a real machine.
+	_ok(g.host_nm.netplay_rejoin_restart(g.host_sys),
+		"join/a restart to admit them is accepted")
+	_ok(await _until(func() -> bool: return g.host_np.is_running(), 1800),
+		"join/and a fresh session comes up")
+	_ok(g.host_np.pending_join_peers().is_empty(),
+		"join/with nobody left waiting")
+
+	# And it refuses when nobody is: RESET must stay an ordinary reset then.
+	_ok(not g.host_nm.netplay_rejoin_restart(g.host_sys),
+		"join/with no one waiting there is nothing to restart for")
+
 	g.host_nm.netplay_stop("done")
 	await _await_frames(5)
 	latecomer.queue_free()

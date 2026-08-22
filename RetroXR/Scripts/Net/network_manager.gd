@@ -423,6 +423,37 @@ func netplay_schedule_reset(system: Object) -> void:
 		_netplay.schedule_reset(system)
 
 
+## Host: spectators waiting for a restart to let them into the running game.
+func netplay_pending_joins() -> Array:
+	if _netplay == null or not is_host():
+		return []
+	return _netplay.pending_join_peers()
+
+
+## Host: start the game again so the people waiting to join are in it.
+##
+## A stop and a fresh cold start, not a reset. Ownership is decided once, at
+## start, from whoever is holding each pad, so admitting somebody new means
+## deciding it again -- and that is a new session by definition. Everyone loses
+## the game in progress, which is why nothing calls this on its own: it is what
+## RESET means while somebody is stood there waiting.
+func netplay_rejoin_restart(system: Object) -> bool:
+	if _netplay == null or not is_host() or system == null:
+		return false
+	# Read the claims BEFORE stopping. The stop clears them, along with every
+	# other per-session record of who was watching.
+	var waiting := _netplay.pending_join_peers()
+	if waiting.is_empty():
+		return false
+	var core := str(system.resolve_core_name()) if system.has_method("resolve_core_name") else ""
+	var rom_md5 := str(system.net_rom_md5()) if system.has_method("net_rom_md5") else ""
+	print("[Netplay] restarting to admit %d waiting player(s)" % waiting.size())
+	_netplay.stop("restarting to let %d more player(s) in" % waiting.size())
+	# The pads have not moved, so default_owners reads the same hands it would
+	# have read a moment ago -- including the ones that were being refused.
+	return netplay_start_host(system, core, rom_md5)
+
+
 ## Aux input feeds for the running game. True means netplay consumed the input.
 func netplay_set_aux_sensor(system: Object, port: int, sensor_index: int,
 		x_mg: int, y_mg: int, z_mg: int, gyro := false) -> bool:

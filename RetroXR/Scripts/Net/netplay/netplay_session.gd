@@ -61,6 +61,9 @@ const STATE_COMPRESSION := FileAccess.COMPRESSION_ZSTD
 ## machine * PORTS_PER_MACHINE + port rather than by port alone.
 const PORTS_PER_MACHINE := 4
 
+## Host: a spectator picked up a pad and wants in, and this session can only
+## admit them by starting again. The machine asks the people playing.
+signal join_requested(peer_id: int, port: int)
 signal desync_detected(peer_id: int, frame: int)
 signal session_stopped(reason: String)
 
@@ -225,6 +228,11 @@ var _ready_peers: Dictionary = {}
 var _crc_table: Dictionary = {}          # frame -> {peer_id -> crc}
 var _strikes: Dictionary = {}            # peer_id -> int
 var _spectators: Dictionary = {}         # peer_id -> true
+## Spectators who have reached for a pad and are waiting for a restart to let
+## them in. peer_id -> the port they are holding. Host-only, and deliberately
+## kept across the restart it asks for: the whole point is that it survives long
+## enough for someone to press RESET.
+var _join_claims: Dictionary = {}
 
 # Late-join bookkeeping (host).
 var _joining: Dictionary = {}            # peer_id -> true (savestate in flight)
@@ -898,6 +906,7 @@ func _stop_local(reason: String) -> void:
 	_deferred_joiners.clear()
 	_joining.clear()
 	_spectators.clear()
+	_join_claims.clear()
 	_crc_table.clear()
 	_pending.clear()
 	session_stopped.emit(reason)
@@ -923,6 +932,7 @@ func _reset_runtime(start_frame: int) -> void:
 	_crc_table.clear()
 	_strikes.clear()
 	_spectators.clear()
+	_join_claims.clear()
 	_joining.clear()
 	_join_capture_pending = false
 	_join_capture_frame = -1
@@ -1147,6 +1157,17 @@ func handoff_port(machine: Object, local_port: int, new_owner: int) -> void:
 	# 0 = unowned (host supplies neutral). A real owner must be a present, active
 	# peer.
 	if new_owner > 0 and (not _nm.peers.has(new_owner) or _spectators.has(new_owner)):
+		# A spectator just reached for a controller. That is the whole of "I want
+		# to play" in this room -- ownership follows whoever is HOLDING the pad,
+		# so picking one up is the same gesture a player already uses to take a
+		# turn. It only fails here because this peer has no core running.
+		#
+		# Remember it rather than dropping it. A session whose cores cannot hand
+		# over a savestate can only admit them by starting again, and that costs
+		# the people already playing their game, so it is their call and not
+		# something to do behind them. The claim is what the machine asks about.
+		if _spectators.has(new_owner) and _nm.peers.has(new_owner):
+			_note_join_claim(new_owner, port)
 		return
 	_schedule_transfer(port, new_owner)
 
@@ -1456,6 +1477,50 @@ func _state_transfer_possible() -> bool:
 		if not NetplayCores.state_transfer_capable(str(spec.get("core", ""))):
 			return false
 	return not _machine_specs.is_empty()
+
+
+## Host: a spectator has asked for a port by picking up the pad in it.
+##
+## Validated NOW rather than at the restart. The restart costs everyone in the
+## room the game they are playing, so discovering only afterwards that the
+## newcomer was never going to be admissible -- wrong architecture, wrong core
+## build -- is the worst order these checks could run in.
+func _note_join_claim(peer_id: int, port: int) -> void:
+	if _join_claims.has(peer_id):
+		_join_claims[peer_id] = port
+		return
+	var why := _why_not_admissible(peer_id)
+	if not why.is_empty():
+		print("[Netplay] peer %d cannot be admitted even by a restart: %s" % [peer_id, why])
+		_np_join_refused.rpc_id(peer_id, why)
+		return
+	_join_claims[peer_id] = port
+	print("[Netplay] peer %d wants port %d; a restart would admit them" % [peer_id, port])
+	join_requested.emit(peer_id, port)
+
+
+## Why this peer could not be admitted even by starting again, or "" if it could.
+##
+## Only what a restart cannot fix. Whether they hold the right pad is theirs to
+## sort out; whether their CPU can run the same arithmetic is not.
+func _why_not_admissible(peer_id: int) -> String:
+	if not _nm.peers.has(peer_id):
+		return "player is no longer here"
+	for spec: Dictionary in _machine_specs:
+		var core := str(spec.get("core", ""))
+		if not NetplayCores.is_capable(core):
+			return "'%s' is not verified for netplay" % core
+	return ""
+
+
+## Host: peers waiting for a restart to let them in, in the order they asked.
+func pending_join_peers() -> Array:
+	return _join_claims.keys()
+
+
+## Host: forget a peer's request to join -- declined, or they put the pad down.
+func clear_join_claim(peer_id: int) -> void:
+	_join_claims.erase(peer_id)
 
 
 ## The strategy this session runs under. `asked` keeps the historical tri-state:
@@ -2643,6 +2708,7 @@ func on_peer_left(peer_id: int) -> void:
 	_join_deadlines.erase(peer_id)
 	_strikes.erase(peer_id)
 	_spectators.erase(peer_id)
+	_join_claims.erase(peer_id)
 	_deferred_joiners.erase(peer_id)
 	for serial: int in _link_waiting.keys():
 		var waiting: Dictionary = _link_waiting[serial]
