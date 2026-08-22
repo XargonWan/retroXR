@@ -80,6 +80,8 @@ func _ready() -> void:
 		await _test_leave()
 	if _want("rollback"):
 		await _test_rollback()
+	if _want("strategy"):
+		await _test_strategy()
 	if _want("link"):
 		await _test_link()
 
@@ -95,9 +97,9 @@ func _ready() -> void:
 
 func _test_cores() -> void:
 	_ok(NetplayCores.is_capable("fceumm"), "cores/a vetted core is capable")
-	_ok(not NetplayCores.is_capable("__never_vetted"),
-		"cores/an unvetted core is not")
 	_ok(not NetplayCores.is_capable("dolphin"),
+		"cores/a listed but unvetted core is not")
+	_ok(not NetplayCores.is_capable("__never_vetted"),
 		"cores/an unlisted core is not")
 	_ok(not NetplayCores.is_capable(""), "cores/no core at all is not")
 
@@ -166,12 +168,68 @@ func _test_cores() -> void:
 	NetplayCores.debug_allow_unverified = false
 	_ok(not NetplayCores.is_capable("dolphin"), "cores/and the override is off again")
 
+	# THREE STRATEGIES, and the table says which a core has evidence for. A core
+	# that only has determinism must never be handed rollback, whatever is asked
+	# of it: rollback rewinds through a savestate every frame, and the reason
+	# these cores are determinism-only is that they have no state to rewind
+	# through.
+	_ok(NetplayCores.strategies_for("fceumm").has(NetplayCores.Strategy.ROLLBACK),
+		"cores/fceumm is vetted for rollback")
+	_eq(NetplayCores.strategies_for("dolphin"), [],
+		"cores/an unverified core is vetted for nothing")
+	_ok(NetplayCores.strategies_for("snes9x").is_empty(),
+		"cores/and so is an unvetted one")
+	_ok(NetplayCores.strategies_for("nonesuch").is_empty(),
+		"cores/and an unknown one")
+	_ok(not NetplayCores.strategies_for("gambatte").has(NetplayCores.Strategy.ROLLBACK),
+		"cores/gambatte is not vetted for rollback")
+	_ok(NetplayCores.strategies_for("mgba").has(NetplayCores.Strategy.DETERMINISM),
+		"cores/mgba is vetted for determinism, which a GC-GBA group needs")
+	# Strongest first, so a group can take the head of the intersection.
+	_eq(NetplayCores.strategies_for("fceumm")[0], NetplayCores.Strategy.ROLLBACK,
+		"cores/the list is strongest first")
+
+	# CROSS-PLAY is a separate question from the strategy. A core can be
+	# determinism-only and still safe across architectures, or roll back happily
+	# and only ever same-arch. Defaults to false because absence of evidence is
+	# not evidence.
+	_ok(NetplayCores.allows_cross_play("fceumm"),
+		"cores/fceumm is vetted x64 against arm64")
+	_ok(not NetplayCores.allows_cross_play("dolphin"),
+		"cores/dolphin is not, because it picks its CPU backend from the host")
+	_ok(not NetplayCores.allows_cross_play("snes9x"),
+		"cores/an unvetted core never crosses architectures")
+	_ok(not NetplayCores.allows_cross_play("nonesuch"),
+		"cores/nor an unknown one")
+
+	# A large core buys back the hitch of hashing its whole RAM with a longer gap.
+	_eq(NetplayCores.crc_interval("fceumm"), NetplayCores.DEFAULT_CRC_INTERVAL,
+		"cores/a small core takes the default CRC gap")
+	_ok(NetplayCores.crc_interval("dolphin") > NetplayCores.DEFAULT_CRC_INTERVAL,
+		"cores/a 24 MB one asks for a longer gap")
+	_eq(NetplayCores.crc_interval("nonesuch"), NetplayCores.DEFAULT_CRC_INTERVAL,
+		"cores/an unknown core takes the default")
+
+	# Dolphin returns 0 for RETRO_MEMORY_SAVE_RAM and keeps its memory cards in a
+	# folder of its own, so the frontend's SRAM sync reaches nothing and two
+	# peers' cards differ in silence.
+	_ok(NetplayCores.uses_scratch_saves("dolphin"),
+		"cores/dolphin needs a scratch save folder")
+	_ok(not NetplayCores.uses_scratch_saves("fceumm"),
+		"cores/a core with real SAVE_RAM does not")
+
 	# Every entry has to answer every question the table is asked, so a missing
 	# key cannot read as a quiet false.
 	for core: String in NetplayCores.CORES:
 		var e: Dictionary = NetplayCores.CORES[core]
-		for key: String in ["verified", "state_transfer", "rollback", "systems", "options"]:
+		for key: String in ["verified", "state_transfer", "strategies", "cross_play",
+				"systems", "options"]:
 			_ok(e.has(key), "cores/%s declares %s" % [core, key])
+		# Every strategy named has to be one that exists, or a typo reads as a
+		# capability nothing will ever select.
+		for s: int in (e["strategies"] as Array):
+			_ok(NetplayCores.STRATEGY_ORDER.has(s),
+				"cores/%s names only real strategies" % core)
 
 
 # ══ Core build identity ═══════════════════════════════════════════════════════
@@ -1231,6 +1289,110 @@ func _test_rollback() -> void:
 	w.host_nm.netplay_stop("done")
 	await _await_frames(5)
 	_free(w)
+
+
+# ══ Which strategy a session runs under ═══════════════════════════════════════
+# A session is a GROUP, and a cabled group can be heterogeneous — a GameCube
+# joined to four Game Boy Advances is one session over Dolphin and mGBA at once.
+# So the strategy is the intersection of what its machines are vetted for, not
+# the anchor's answer: a strategy only half the group can hold is not one the
+# session can hold.
+
+func _test_strategy() -> void:
+	var w := await _pair()
+	var owners := {0: 1, 1: w.client_id}
+
+	# Asking for rollback does not get it from a core with no evidence for it.
+	# Dolphin is unverified, so the debug override is what lets it start at all;
+	# the strategy it lands on is still the table's answer, not the caller's.
+	NetplayCores.debug_allow_unverified = true
+	w.host_sys.machine_core = "dolphin"
+	_ok(w.host_nm.netplay_start_host(w.host_sys, "dolphin", "MD5", owners, 3, 1),
+		"strategy/a determinism-only core starts")
+	_eq(w.host_np._strategy, NetplayCores.Strategy.DETERMINISM,
+		"strategy/on determinism, though rollback was asked for")
+	_ok(not w.host_np._rollback, "strategy/and the rollback engine stays off")
+	w.host_nm.netplay_stop("done")
+	await _await_frames(5)
+
+	# Forcing lockstep cannot conjure it either: the group decides what exists.
+	w.host_nm.netplay_start_host(w.host_sys, "dolphin", "MD5", owners, 3, 0)
+	_eq(w.host_np._strategy, NetplayCores.Strategy.DETERMINISM,
+		"strategy/nor does asking for lockstep give a core one it lacks")
+	w.host_nm.netplay_stop("done")
+	await _await_frames(5)
+	NetplayCores.debug_allow_unverified = false
+
+	# An ordinary verified core is unaffected: still rollback when it can.
+	w.host_sys.machine_core = "fceumm"
+	w.host_nm.netplay_start_host(w.host_sys, "fceumm", "MD5", owners, 3, 1)
+	_eq(w.host_np._strategy, NetplayCores.Strategy.ROLLBACK,
+		"strategy/a rollback-capable core still rolls back")
+	w.host_nm.netplay_stop("done")
+	await _await_frames(5)
+	w.host_nm.leave_session()
+	await _await_frames(5)
+
+	# ── The intersection, over a real two-machine group ───────────────────────
+	var c := await _pair_cabled()
+	var cowners := {0: 1, 1: c.client_id}
+
+	# fceumm is [rollback, lockstep] and mGBA is [lockstep, determinism]. The only
+	# thing both hold is lockstep — which is also what the cable would have
+	# forced, so this passes for the right reason only alongside the case below.
+	c.host_far.machine_core = "mgba"
+	c.client_far.machine_core = "mgba"
+	_ok(c.host_nm.netplay_start_host(c.host_sys, "fceumm", "MD5", cowners, 3, 1),
+		"strategy/a mixed group starts")
+	_eq(c.host_np._strategy, NetplayCores.Strategy.LOCKSTEP,
+		"strategy/on the one strategy both its cores hold")
+	c.host_nm.netplay_stop("done")
+	await _await_frames(5)
+
+	# The pairing Four Swords Adventures actually needs: a console and a handheld
+	# whose cores share determinism and nothing else. A cabled machine used to
+	# mean lockstep unconditionally; this is the case that lands past it.
+	NetplayCores.debug_allow_unverified = true
+	c.host_sys.machine_core = "dolphin"
+	c.client_sys.machine_core = "dolphin"
+	_ok(c.host_nm.netplay_start_host(c.host_sys, "dolphin", "MD5", cowners, 3, 1),
+		"strategy/a console cabled to a handheld starts")
+	_eq(c.host_np._strategy, NetplayCores.Strategy.DETERMINISM,
+		"strategy/on determinism, not the lockstep a cable used to force")
+	c.host_nm.netplay_stop("done")
+	await _await_frames(5)
+
+	# And a cabled pair whose cores share NOTHING is a refusal, not a fallback.
+	# fceumm holds rollback and lockstep; Dolphin holds only determinism.
+	c.host_sys.machine_core = "fceumm"
+	c.host_far.machine_core = "dolphin"
+	_ok(not c.host_nm.netplay_start_host(c.host_sys, "fceumm", "MD5", cowners, 3, -1),
+		"strategy/a group whose cores agree on nothing refuses to start")
+	_ok(not c.host_np.is_running(), "strategy/and nothing is left running")
+	NetplayCores.debug_allow_unverified = false
+	await _await_frames(5)
+
+	# The slowest machine sets the CRC pace. Hashing a GameCube's 24 MB at a Game
+	# Boy's cadence would put the hitch on every peer, because every peer runs
+	# every machine.
+	var mixed: Array = [{"core": "fceumm"}, {"core": "dolphin"}]
+	c.host_np._machine_specs = mixed
+	_eq(c.host_np._group_crc_interval(), NetplayCores.crc_interval("dolphin"),
+		"strategy/the group takes the longest CRC gap any machine asks for")
+	c.host_np._machine_specs = [{"core": "fceumm"}]
+	_eq(c.host_np._group_crc_interval(), NetplayCores.DEFAULT_CRC_INTERVAL,
+		"strategy/and the default when nothing asks for more")
+
+	# Cross-play is an AND: one same-arch-only core makes the whole group so,
+	# because every peer runs every machine.
+	_ok(c.host_np._group_allows_cross_play(),
+		"strategy/a group of cross-play cores may cross architectures")
+	c.host_np._machine_specs = mixed
+	_ok(not c.host_np._group_allows_cross_play(),
+		"strategy/one core that may not stops the whole group")
+
+	c.host_nm.leave_session()
+	await _await_frames(5)
 
 
 # ══ A cabled pair ═════════════════════════════════════════════════════════════

@@ -97,6 +97,11 @@ var _group_net_ids: PackedInt32Array = PackedInt32Array()
 var _machine_specs: Array = []
 var _core := ""
 var _delay := 3
+## How this session keeps its peers in step, agreed by the host and shipped to
+## every peer at cold start. `_rollback` is derived from it and stays a bool
+## because that is what the native gate takes; everything that only asks "am I
+## rewinding?" keeps reading it.
+var _strategy: int = NetplayCores.Strategy.LOCKSTEP
 var _rollback := false          # GGPO-style: local input live, remote predicted
 var _all_ports: PackedInt32Array = PackedInt32Array()   # sorted participating ports
 var _local_ports: Dictionary = {}       # port -> true (owned by this peer)
@@ -260,13 +265,23 @@ func start_host(system: Object, core: String, rom_md5: String, owners: Dictionar
 	print("[Netplay] preparing %d machine(s): %s" % [
 		_machine_specs.size(), str(_spec_summaries(_machine_specs))])
 	_delay = clampi(delay, 1, 8)
-	_rollback = NetplayCores.rollback_capable(core) if rollback < 0 else rollback == 1
-	if _rollback and (_group.size() > 1 or _is_linked(system)):
-		push_warning("[Netplay] machine is on a link bus; starting in lockstep, not rollback")
-		_rollback = false
-	if _rollback and _requires_lockstep_input():
-		push_warning("[Netplay] movable or sensor peripheral requires lockstep; disabling rollback")
-		_rollback = false
+	var available: Array = _group_strategies()
+	if available.is_empty():
+		push_warning("[Netplay] cores %s share no way to run a session together"
+			% str(_spec_cores(_machine_specs)))
+		_stop_local("cores cannot agree on a netplay strategy")
+		return false
+	_strategy = _pick_strategy(available, rollback)
+	if _strategy == NetplayCores.Strategy.ROLLBACK \
+			and (_group.size() > 1 or _is_linked(system)):
+		_strategy = _demote_from_rollback(available)
+		push_warning("[Netplay] machine is on a link bus; starting in %s, not rollback"
+			% strategy_str(_strategy))
+	if _strategy == NetplayCores.Strategy.ROLLBACK and _requires_lockstep_input():
+		_strategy = _demote_from_rollback(available)
+		push_warning("[Netplay] movable or sensor peripheral requires %s; disabling rollback"
+			% strategy_str(_strategy))
+	_rollback = _strategy == NetplayCores.Strategy.ROLLBACK
 	_set_owners(owners)
 	_ready_peers.clear()
 	_host_identities.clear()
@@ -289,12 +304,17 @@ func start_host(system: Object, core: String, rom_md5: String, owners: Dictionar
 
 @rpc("authority", "call_remote", "reliable", CH_CONTROL)
 func _np_start(group_net_ids: PackedInt32Array, machine_specs: Array,
-		owners: Dictionary, delay: int, start_frame: int, rollback := false,
+		owners: Dictionary, delay: int, start_frame: int,
+		strategy := NetplayCores.Strategy.LOCKSTEP,
 		host_identities: Array = []) -> void:
 	_machine_specs = machine_specs.duplicate(true)
 	_core = str(_machine_specs[0].get("core", "")) if not _machine_specs.is_empty() else ""
 	_delay = delay
-	_rollback = rollback
+	# The host decided this; a client never re-derives it. Its own allowlist would
+	# agree today, but a peer that reached a different answer would run a
+	# different engine against the same frames and call it a desync.
+	_strategy = strategy
+	_rollback = strategy == NetplayCores.Strategy.ROLLBACK
 	_host_identities = host_identities.duplicate(true)
 	_local_identities.clear()
 	_set_owners(owners)
@@ -597,7 +617,7 @@ func _poll_core_ready() -> void:
 		_host_identities = identities.duplicate(true)
 		print("[Netplay] host cores: %s" % str(_identity_strings(identities)))
 		_np_start.rpc(_group_net_ids, _machine_specs, _owners, _delay, 0,
-			_rollback, _host_identities)
+			_strategy, _host_identities)
 		_mark_ready(1)
 		return
 
@@ -1406,6 +1426,84 @@ func _state_transfer_possible() -> bool:
 	return not _machine_specs.is_empty()
 
 
+## The strategy this session runs under. `asked` keeps the historical tri-state:
+## -1 auto (take the strongest the group agrees on), 0 prefer lockstep, 1 prefer
+## rollback. A preference that the group cannot hold is not an error — the caller
+## is asking for a shape, and the group's own capability decides.
+func _pick_strategy(available: Array, asked: int) -> int:
+	if asked == 1 and available.has(NetplayCores.Strategy.ROLLBACK):
+		return NetplayCores.Strategy.ROLLBACK
+	if asked == 0 and available.has(NetplayCores.Strategy.LOCKSTEP):
+		return NetplayCores.Strategy.LOCKSTEP
+	return int(available[0])
+
+
+## Where a session lands when rollback is ruled out after the fact. Determinism
+## where the group has it, lockstep otherwise — both keep every core running
+## forward, which is the property rollback was giving up.
+func _demote_from_rollback(available: Array) -> int:
+	if available.has(NetplayCores.Strategy.DETERMINISM):
+		return NetplayCores.Strategy.DETERMINISM
+	return NetplayCores.Strategy.LOCKSTEP
+
+
+static func strategy_str(strategy: int) -> String:
+	match strategy:
+		NetplayCores.Strategy.ROLLBACK:
+			return "rollback"
+		NetplayCores.Strategy.DETERMINISM:
+			return "determinism"
+		_:
+			return "lockstep"
+
+
+static func _spec_cores(specs: Array) -> Array[String]:
+	var out: Array[String] = []
+	for spec: Dictionary in specs:
+		out.append(str(spec.get("core", "")))
+	return out
+
+
+## The strategies every machine in this session is vetted for, strongest first.
+##
+## An intersection rather than the anchor's answer, because a cabled group can be
+## heterogeneous: a GameCube joined to four Game Boy Advances is ONE session over
+## Dolphin and mGBA at once, and a strategy only one of them can hold is not a
+## strategy the session can hold. Empty means the group's cores cannot agree on
+## any way to run, which is a refusal rather than a fallback.
+func _group_strategies() -> Array:
+	if _machine_specs.is_empty():
+		return []
+	var out: Array = NetplayCores.strategies_for(str(_machine_specs[0].get("core", "")))
+	for i in range(1, _machine_specs.size()):
+		var theirs: Array = NetplayCores.strategies_for(str(_machine_specs[i].get("core", "")))
+		var kept: Array = []
+		for s: int in out:
+			if theirs.has(s):
+				kept.append(s)
+		out = kept
+	return out
+
+
+## Whether every machine in the session may play across CPU architectures. One
+## core that may not makes the whole group same-arch: the peers run all of them.
+func _group_allows_cross_play() -> bool:
+	for spec: Dictionary in _machine_specs:
+		if not NetplayCores.allows_cross_play(str(spec.get("core", ""))):
+			return false
+	return not _machine_specs.is_empty()
+
+
+## The longest CRC gap any machine in the session asks for. The most expensive
+## core sets the pace for all of them, or a GameCube's 24 MB hash gets scheduled
+## at a Game Boy's cadence and every peer wears the hitch.
+func _group_crc_interval() -> int:
+	var out := NetplayCores.DEFAULT_CRC_INTERVAL
+	for spec: Dictionary in _machine_specs:
+		out = maxi(out, NetplayCores.crc_interval(str(spec.get("core", ""))))
+	return out
+
+
 ## True when `machine` is one of the machines this session is running, which is
 ## what decides whether a cable seated on it is the session's business.
 func covers(machine: Object) -> bool:
@@ -2060,7 +2158,7 @@ func _begin_join_transfer(peer_id: int) -> void:
 		"owners": _owners,
 		"delay": _delay,
 		"frame": _join_frame,
-		"rollback": _rollback,
+		"strategy": _strategy,
 		"identities": _host_identities,
 		"link_states": _join_link_states,
 	}
@@ -2412,7 +2510,8 @@ func _accept_join_snapshot(snapshot: Dictionary, states: Array) -> void:
 	_machine_specs = (snapshot["machine_specs"] as Array).duplicate(true)
 	_core = str(_machine_specs[0].get("core", "")) if not _machine_specs.is_empty() else ""
 	_delay = int(snapshot["delay"])
-	_rollback = bool(snapshot["rollback"])
+	_strategy = int(snapshot["strategy"])
+	_rollback = _strategy == NetplayCores.Strategy.ROLLBACK
 	_host_identities = (snapshot["identities"] as Array).duplicate(true)
 	_local_identities.clear()
 	_set_owners(snapshot["owners"] as Dictionary)
