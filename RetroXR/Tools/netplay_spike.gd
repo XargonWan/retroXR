@@ -57,7 +57,7 @@ var state_in := ""       # load another machine's state instead of self-saving
 const ROLLBACK_LAG := 3      # confirmations trail execution by this many frames
 const ROLLBACK_MAX_AHEAD := 8
 
-const SAVE_AT := 600
+var save_at := 600
 const END_AT := 1800
 
 var _lib: Node = null
@@ -99,6 +99,8 @@ func _ready() -> void:
 			rom = arg.trim_prefix("--spike-rom=")
 		elif arg.begins_with("--spike-root="):
 			root_dir = arg.trim_prefix("--spike-root=")
+		elif arg.begins_with("--spike-save-at="):
+			save_at = int(arg.trim_prefix("--spike-save-at="))
 		elif arg.begins_with("--spike-crc-interval="):
 			crc_interval = int(arg.trim_prefix("--spike-crc-interval="))
 		elif arg.begins_with("--spike-option="):
@@ -188,7 +190,7 @@ func _process(_delta: float) -> void:
 		while _next_feed < cur + 90:
 			_lib.PostNetplayInputs(_next_feed, _flat(_next_feed))
 			_next_feed += 1
-	if _phase == "A" and not _saved and cur >= SAVE_AT:
+	if _phase == "A" and not _saved and cur >= save_at:
 		_saved = true
 		_lib.RequestSaveState()
 	elif _phase == "B" and cur >= END_AT + 30:
