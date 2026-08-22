@@ -431,6 +431,13 @@ func card_slot_count() -> int:
 	return 2
 
 
+## How far a seated card's CENTRE sits outside the bay face. A GameCube card is
+## 51 mm long and goes in about half its length, the same as the PlayStation's
+## does, so its middle ends up close to the face and roughly half stands out
+## where a hand can reach it.
+const MEMCARD_PROUD := 0.001
+
+
 ## Seat one card zone on the MemSlot mesh that draws it, and shut it again if the
 ## flap is closed.
 ##
@@ -442,7 +449,20 @@ func configure_memory_card_slot(slot: Node3D, index: int) -> void:
 	var anchor := get_node_or_null("Top/MemGroup/MemSlot%d" % (index + 1)) as Node3D
 	if anchor == null or slot == null:
 		return
-	slot.global_transform = anchor.global_transform
+	# NOT a straight copy of the anchor's transform, which is what a controller
+	# port takes: a plug disappears into its socket, and a card must not. Copied
+	# outright, a seated card sat wholly inside the shell -- invisible, and with
+	# nothing standing out to take hold of.
+	#
+	# The anchor is the slit drawn on the bay's face. Its local Z runs ALONG that
+	# slit and its local Y is the face normal, so the card is turned to enter
+	# edge-first: its width across the slit, its length along the normal.
+	# Constructed by columns, which is what Basis(x, y, z) takes -- the transpose
+	# of the row-major form a .tscn prints.
+	const CARD_TURN := Basis(Vector3(0, 0, 1), Vector3(1, 0, 0), Vector3(0, 1, 0))
+	var t := anchor.global_transform
+	slot.global_transform = Transform3D(t.basis * CARD_TURN,
+		t.origin + t.basis.y.normalized() * MEMCARD_PROUD)
 	if not _mem_zones.has(slot):
 		_mem_zones.append(slot)
 	_apply_mem_gate.call_deferred()
