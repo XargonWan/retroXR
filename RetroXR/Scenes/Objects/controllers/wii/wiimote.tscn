@@ -16,15 +16,24 @@
 [ext_resource type="Texture2D" path="res://Textures/Controllers/wii_marks/wii_mark_one.svg" id="9_mk_one"]
 [ext_resource type="Texture2D" path="res://Textures/Controllers/wii_marks/wii_mark_two.svg" id="9_mk_two"]
 
+; Shell, trigger and moulding seam, baked by Tools/gen_wiimote.gd. Edit the
+; profile tables there and re-run it; there is nothing to hand-edit here.
+[ext_resource type="ArrayMesh" path="res://Scenes/Objects/controllers/wii/wiimote_shell.res" id="20_shell"]
+[ext_resource type="ArrayMesh" path="res://Scenes/Objects/controllers/wii/wiimote_trigger.res" id="20_trigger"]
+[ext_resource type="ArrayMesh" path="res://Scenes/Objects/controllers/wii/wiimote_seam.res" id="20_seam"]
+[ext_resource type="ArrayMesh" path="res://Scenes/Objects/controllers/wii/wiimote_cover.res" id="20_cover"]
+
 [sub_resource type="PhysicsMaterial" id="PhysMat_wm"]
 friction = 0.8
 
 ; 36 x 30 x 148 mm — the real remote's shell, long axis on Z with -Z forward
 ; (the IR window end). Every child position below is measured off that.
+;
+; The physics proxy stays a plain box even though the shell is now a lofted
+; solid with filleted edges and rolled ends. A box is the right proxy for a
+; bar-shaped prop, and holding it fixed across the reshape kept grab, throw,
+; snap-zone and save/restore behaviour bit-identical while the visual moved.
 [sub_resource type="BoxShape3D" id="BoxShape3D_body"]
-size = Vector3(0.036, 0.03, 0.148)
-
-[sub_resource type="BoxMesh" id="BoxMesh_body"]
 size = Vector3(0.036, 0.03, 0.148)
 
 ; The console's lacquer, to the number — Mat_white in wii_primitive.tscn. Same moulded
@@ -41,6 +50,20 @@ clearcoat_roughness = 0.04
 
 [sub_resource type="StandardMaterial3D" id="Mat_dark"]
 albedo_color = Color(0.1, 0.1, 0.11, 1)
+
+; The moulding parting line down both flanks. A ribbon standing 0.15 mm off the
+; shell rather than a groove cut into it — the shell is a closed loft and a real
+; groove would mean splitting every ring. Barely darker than the lacquer: this
+; is a shut line catching light, not an inked stripe.
+;
+; CULL_DISABLED because a ribbon is a SHEET. It encloses no volume, so nothing in
+; the generator can decide which way it should face, and the material is where
+; that stops mattering.
+[sub_resource type="StandardMaterial3D" id="Mat_seam"]
+cull_mode = 2
+albedo_color = Color(0.86, 0.86, 0.85, 1)
+metallic_specular = 0.5
+roughness = 0.35
 
 [sub_resource type="StandardMaterial3D" id="Mat_grey"]
 albedo_color = Color(0.72, 0.72, 0.74, 1)
@@ -118,8 +141,8 @@ radius = 0.005
 height = 0.004
 
 ; The dished lip POWER and HOME sit down inside. Both are recessed on the real
-; shell, and neither can be bored here — the body is one box mesh, and nothing
-; below its top face at y=0.015 can be seen at all.
+; shell, and neither can be bored here — the body is one closed loft, so nothing
+; below its top face can be seen at all.
 ;
 ; So the recess is built the other way up: a raised LIP whose crown clears the cap
 ; it surrounds, which reads as a dish because the cap is the lower of the two. It
@@ -234,9 +257,6 @@ transparency = 2
 alpha_scissor_threshold = 0.5
 albedo_texture = ExtResource("9_mk_two")
 
-; B trigger on the underside: a wedge the finger curls onto.
-[sub_resource type="BoxMesh" id="BoxMesh_trigger"]
-size = Vector3(0.014, 0.011, 0.018)
 
 ; One player LED lens. Duplicated four times across the butt end; wiimote.gd
 ; gives each its own material at _ready so they can light independently.
@@ -246,15 +266,13 @@ size = Vector3(0.004, 0.001, 0.002)
 [sub_resource type="StandardMaterial3D" id="Mat_led"]
 albedo_color = Color(0.06, 0.07, 0.12, 1)
 
-; Battery cover over the back half of the underside, hiding SYNC.
-[sub_resource type="BoxMesh" id="BoxMesh_cover"]
-size = Vector3(0.03, 0.002, 0.056)
-
 [sub_resource type="BoxShape3D" id="BoxShape3D_cover"]
 size = Vector3(0.032, 0.008, 0.058)
 
+; 1 mm thick, not 2. It stands proud of the BAY FLOOR now rather than of the
+; shell's outer skin, and the floor is only 1.2 mm above the cover's inner face.
 [sub_resource type="BoxMesh" id="BoxMesh_sync"]
-size = Vector3(0.008, 0.002, 0.008)
+size = Vector3(0.008, 0.001, 0.008)
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_sync"]
 size = Vector3(0.01, 0.006, 0.01)
@@ -293,8 +311,12 @@ script = ExtResource("1_wmscript")
 shape = SubResource("BoxShape3D_body")
 
 [node name="Body" type="MeshInstance3D" parent="."]
-mesh = SubResource("BoxMesh_body")
+mesh = ExtResource("20_shell")
 surface_material_override/0 = SubResource("Mat_shell")
+
+[node name="Seam" type="MeshInstance3D" parent="." groups=["outline_exclude"]]
+mesh = ExtResource("20_seam")
+surface_material_override/0 = SubResource("Mat_seam")
 
 [node name="IRWindow" type="MeshInstance3D" parent="."]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -0.0735)
@@ -325,7 +347,7 @@ surface_material_override/0 = SubResource("Mat_well")
 ; it needs the poke volume. Nothing binds to it and it reaches no core;
 ; wiimote.gd reads how long it is HELD.
 [node name="PowerButton" type="Area3D" parent="."]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.0095, 0.016, -0.066)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.0095, 0.0158, -0.066)
 collision_layer = 0
 collision_mask = 0
 script = ExtResource("7_vrbtn")
@@ -475,7 +497,7 @@ surface_material_override/0 = SubResource("Mat_mark_plus")
 ; its own shadow at any raking angle and reads as a STUD, which is the opposite of
 ; a hole; near-flush, the dark material does the work on its own.
 [node name="FaceDots" type="MultiMeshInstance3D" parent="."]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.01505, 0)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.015, 0)
 multimesh = SubResource("MM_face_dots")
 material_override = SubResource("Mat_hole")
 
@@ -548,27 +570,50 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.0105, 0, 0)
 mesh = SubResource("BoxMesh_led")
 surface_material_override/0 = SubResource("Mat_led")
 
-; Pivot sits at the trigger's TOP edge so the blade sweeps back toward the palm,
-; the same arrangement (and sign) as the ray gun's.
+; Hinged at the trigger's FRONT edge — its nose end — which is where the real one
+; pivots. The sign is unchanged (-16 degrees about local X, TRIGGER_PULL_DEG) and
+; so is the ray gun's arrangement it was copied from; what moved is the axis.
+;
+; It used to sit at (0, -0.0135, -0.03), which after the shell gained its taper was
+; 88% of the way along the fin — near its BACK. Rotating about a point at the back
+; swings the FRONT, so a pull drove the trigger's nose 3.7 mm DOWN and out through
+; the shell: it read as the button popping out rather than being pressed. Hinged at
+; the front, the same rotation lifts the free end 4.8 mm INTO the shell, which is a
+; trigger being pressed, and the crown still stands 1.6 mm proud at full pull so it
+; does not simply vanish.
+;
+; gen_wiimote.gd mirrors this position in TRIG_PIVOT and builds the fin relative to
+; it. The two have to agree — change one and change the other.
 [node name="TriggerPivot" type="Node3D" parent="."]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.0135, -0.03)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.005, -0.0445)
 
+; No offset: gen_wiimote.gd builds the fin in THIS frame, so its stations are the
+; positions rather than an offset from them. It runs from a tip 18 mm forward of
+; the pivot back to a root 4 mm behind it, and that root sits INSIDE the shell —
+; the fin is not booleaned out of the body, it intersects it, so starting from
+; inside is what keeps a slot from opening around its base.
 [node name="Trigger" type="MeshInstance3D" parent="TriggerPivot"]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.0055, -0.007)
-mesh = SubResource("BoxMesh_trigger")
+mesh = ExtResource("20_trigger")
 surface_material_override/0 = SubResource("Mat_cap")
 
-; Hinged at its FRONT edge so the cover swings down and away from the shell,
-; clearing the SYNC cap behind it rather than sweeping across it. A positive
-; angle about the pivot's local X carries the free (+Z) end to -Y, which on this
-; underside face is outward.
+; Hinged at the bay's FRONT edge so the cover swings down and away from the shell.
+; A positive angle about the pivot's local X carries the free (+Z) end to -Y,
+; which on this underside face is outward.
 ;
+; The cover used to sit at y -0.0185 — 2.5 mm below a shell whose skin was at
+; -0.015 — so it read as a slab hovering under the remote with daylight behind
+; it. It now sits IN the battery bay gen_wiimote.gd cuts into the underside, with
+; its outer face on the skin the bay was cut out of. Its shape is that skin, so
+; it cannot gap against a surface that is flat over the middle and arced at the
+; edges; that mismatch is why a flat 30 mm box could never sit down on this shell.
+;
+; This transform mirrors BAY_Z0 and the skin height there. Change either and
+; re-run the generator, which prints the hinge it expects.
 [node name="CoverPivot" type="Node3D" parent="."]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.0185, 0.014)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.0149, -0.012)
 
 [node name="CoverMesh" type="MeshInstance3D" parent="CoverPivot"]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0.028)
-mesh = SubResource("BoxMesh_cover")
+mesh = ExtResource("20_cover")
 surface_material_override/0 = SubResource("Mat_shell")
 
 ; VRHinge is an Area3D that ROTATES A SEPARATE TARGET, so the grab region and the
@@ -596,7 +641,7 @@ surface_material_override/0 = SubResource("Mat_shell")
 ; aimed at the button swung the cover shut instead. Pulled back to the butt and
 ; tightened to 22 mm, the two no longer overlap: 32 mm of cover separates them.
 [node name="BatteryCover" type="Area3D" parent="CoverPivot" node_paths=PackedStringArray("target")]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.003, 0.048)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.004, 0.076)
 collision_layer = 0
 collision_mask = 0
 script = ExtResource("8_vrhinge")
@@ -613,15 +658,33 @@ shape = SubResource("BoxShape3D_cover")
 ; open, and with nothing standing proud for a fingertip to find. It now sits flush
 ; at the top and 2 mm proud, with the cover clearing it by 1 mm when shut.
 [node name="SyncButton" type="Area3D" parent="."]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.016, 0.03)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.0125, 0.03)
 collision_layer = 0
 collision_mask = 0
+;
+; A POKE, like the face caps, not a trigger pull. TOUCH mode's test is a plain
+; sphere about the Area's origin, so a button facing DOWN needs no special
+; handling — depress_axis only says which way the cap travels once it fires.
+;
+; Two things make this safe, and neither is a coincidence of geometry:
+;
+;   * A shut cover really does cover it. wiimote.gd calls set_active(false) at
+;     ready and only re-arms at COVER_OPEN_DEG, so there is no reaching through
+;     the lid — which matters far more for a touch than it did for a trigger,
+;     because touch has no line of sight either.
+;   * It cannot be fired by reaching for the cover. The hinge engages inside
+;     22 mm of its own origin, and at the 45 degrees SYNC needs to be live at all
+;     that origin has swung 42 mm away from this one — so a 9 mm touch sphere
+;     leaves 11 mm between the two volumes. Shut, the gap is still 32 mm.
+;
+; It also retires the conflict the old arrangement was built around: a trigger
+; pull aimed here used to swing the cover shut instead. Touch and trigger are
+; different gestures, so the two can no longer be confused for one another.
 script = ExtResource("7_vrbtn")
-require_trigger = true
 depress_axis = Vector3(0, 1, 0)
 depress_depth = 0.0015
-trigger_radius = 0.012
-interact_margin = 0.012
+trigger_radius = 0.009
+contact_margin = 0.006
 
 [node name="CollisionShape3D" type="CollisionShape3D" parent="SyncButton"]
 shape = SubResource("BoxShape3D_sync")
@@ -636,7 +699,7 @@ surface_material_override/0 = SubResource("Mat_cap")
 ; toward the remote's front, which is the way round it falls when you tilt the
 ; underside toward you.
 [node name="ButtonLabel" type="Label3D" parent="SyncButton"]
-transform = Transform3D(-1, 0, 0, 0, 0, -1, 0, -1, 0, 0, -0.004, 0)
+transform = Transform3D(-1, 0, 0, 0, 0, -1, 0, -1, 0, 0, -0.0005, 0.011)
 pixel_size = 0.0005
 text = "SYNC"
 font_size = 12
