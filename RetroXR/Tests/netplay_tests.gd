@@ -310,6 +310,43 @@ func _test_identity() -> void:
 	_eq(NetplaySession.identity_str({}), "(unknown)",
 		"identity/and an absent one says so")
 
+	# ── Architecture ──────────────────────────────────────────────────────────
+	# Two peers can hold the same build of the same core and still compute
+	# different answers: Dolphin picks JIT64 on x86_64 and JITARM64 on arm64,
+	# which are two different compilers for the same PowerPC. So the identity
+	# carries the HOST's architecture as well as the core's build, and whether a
+	# difference is fatal is a per-core fact.
+	var x64 := IDENT_A.duplicate()
+	x64["arch"] = "x86_64"
+	var arm := IDENT_A.duplicate()
+	arm["arch"] = "arm64"
+
+	_ok(NetplaySession.identity_mismatch(x64, x64.duplicate(), "dolphin").is_empty(),
+		"identity/matching architectures play, cross-play or not")
+
+	var cross := NetplaySession.identity_mismatch(x64, arm, "dolphin")
+	_ok(not cross.is_empty(),
+		"identity/a core not vetted across architectures refuses the other one")
+	_ok(cross.contains("x86_64") and cross.contains("arm64"),
+		"identity/and the refusal names both, so the player knows which end to change")
+
+	# The other direction of the same flag. Without this the check passes just as
+	# well against code that refuses every architecture difference outright.
+	_ok(NetplaySession.identity_mismatch(x64, arm, "fceumm").is_empty(),
+		"identity/a core vetted across them is let through")
+
+	# An identity with no stamp predates the check. Judging it would refuse every
+	# peer on the strength of a field neither of them sent.
+	_ok(NetplaySession.identity_mismatch(IDENT_A, arm, "dolphin").is_empty(),
+		"identity/an unstamped identity is not judged on architecture")
+	_ok(NetplaySession.identity_mismatch(x64, IDENT_A, "dolphin").is_empty(),
+		"identity/in either position")
+
+	# An unknown core answers false to allows_cross_play, so it is held to
+	# same-arch — the safe way round for something with no evidence at all.
+	_ok(not NetplaySession.identity_mismatch(x64, arm, "nonesuch").is_empty(),
+		"identity/an unknown core is held to one architecture")
+
 
 # ══ The wire format ═══════════════════════════════════════════════════════════
 # Everything crossing the wire is integers, which is what makes cross-platform

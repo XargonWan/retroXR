@@ -582,6 +582,13 @@ func _core_identities() -> Array:
 		var identity: Dictionary = lib.GetCoreIdentity()
 		if identity.is_empty():
 			return []
+		# Stamped here rather than published by the core, because it describes
+		# the MACHINE this core is running on, not the core. Two peers can hold
+		# the same build of the same core and still disagree about arithmetic:
+		# Dolphin picks JIT64 on x86_64 and JITARM64 on arm64, two different
+		# compilers for the same PowerPC.
+		identity = identity.duplicate()
+		identity["arch"] = Engine.get_architecture_name()
 		identities.append(identity)
 	return identities
 
@@ -632,7 +639,10 @@ func _poll_core_ready() -> void:
 		_stop_local(count_bad)
 		return
 	for i in range(identities.size()):
-		var bad := identity_mismatch(_host_identities[i], identities[i])
+		var machine_core := ""
+		if i < _machine_specs.size():
+			machine_core = str(_machine_specs[i].get("core", ""))
+		var bad := identity_mismatch(_host_identities[i], identities[i], machine_core)
 		if not bad.is_empty():
 			bad = "machine %d: %s" % [i, bad]
 			push_warning("[Netplay] %s" % bad)
@@ -671,9 +681,24 @@ func _poll_core_ready() -> void:
 ## Why `got` cannot play against `want`, or "" when it can. Ordered so the
 ## message names the most specific difference: which build, then whether a
 ## savestate can even cross between them, then the API they were built against.
-static func identity_mismatch(want: Dictionary, got: Dictionary) -> String:
+static func identity_mismatch(want: Dictionary, got: Dictionary, core := "") -> String:
 	if want.is_empty() or got.is_empty():
 		return "core did not report a build identity"
+	# The architectures have to match unless this core has been shown to play
+	# across them. Checked FIRST because it is the difference that explains the
+	# others: two hosts of different architectures can hold the same build and
+	# still compute different answers, so a mismatch here is the real reason and
+	# anything below would only be a symptom.
+	#
+	# Keyed on the core rather than the strategy: whether arithmetic survives a
+	# change of CPU is a fact about the emulator, not about how the session is
+	# run. An identity with no arch stamp predates the check and is not judged.
+	var want_arch := str(want.get("arch", ""))
+	var got_arch := str(got.get("arch", ""))
+	if not want_arch.is_empty() and not got_arch.is_empty() and want_arch != got_arch \
+			and not NetplayCores.allows_cross_play(core):
+		return "'%s' is not verified across architectures: host is %s, you are %s" % [
+			core, want_arch, got_arch]
 	if str(want.get("library_name", "")) != str(got.get("library_name", "")) \
 			or str(want.get("library_version", "")) != str(got.get("library_version", "")):
 		return "core build mismatch: host runs %s, you run %s" % [
