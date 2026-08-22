@@ -18,12 +18,20 @@ extends Node
 
 var _pass := 0
 var _fail := 0
+## The player's romm_sync.json as it was before this run touched it.
+var _ledger_before := ""
 
 
 func _ready() -> void:
 	get_tree().create_timer(60.0).timeout.connect(func() -> void:
 		print("[state-ui] TIMEOUT")
 		get_tree().quit(1))
+	# _test_backup_notice drives SaveSync._id_done on the AUTOLOAD, which
+	# persists what it is told -- so a run left a fake id for a ROM that does not
+	# exist ("nes/notice_probe.nes" -> 4242) sitting in the player's real ledger.
+	# rom_id_for consults that ledger now, so the leak came back on the NEXT run
+	# as two failures in this very file. Snapshot it and put it back.
+	_ledger_before = FileAccess.get_file_as_string(RommSaveSync.state_path()) 		if FileAccess.file_exists(RommSaveSync.state_path()) else ""
 	_test_tab_order()
 	_test_active_scroll_follows_the_tab()
 	_test_rows()
@@ -32,8 +40,24 @@ func _ready() -> void:
 	_test_arm_ladder()
 	_test_thumb_cache()
 	_test_backup_notice()
+	_restore_ledger()
 	print("[state-ui] ---- %d passed, %d failed ----" % [_pass, _fail])
 	get_tree().quit(1 if _fail > 0 else 0)
+
+
+## Put the player's sync ledger back byte for byte.
+func _restore_ledger() -> void:
+	var path := RommSaveSync.state_path()
+	if _ledger_before.is_empty():
+		if FileAccess.file_exists(path):
+			DirAccess.remove_absolute(path)
+		return
+	var f := FileAccess.open(path, FileAccess.WRITE)
+	if f == null:
+		push_warning("[state_tests] cannot restore %s" % path)
+		return
+	f.store_string(_ledger_before)
+	f.close()
 
 
 func _ok(name: String, cond: bool, detail := "") -> void:

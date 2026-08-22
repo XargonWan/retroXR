@@ -117,8 +117,17 @@ func rom_id_for(systemid: String, rom_path: String) -> int:
 		# and its saves went nowhere.
 		#
 		# resolved_rom_id guards on the file's size and mtime, so a different ROM
-		# dropped in under the same name does not inherit the old answer.
-		resolved = maxi(resolved_rom_id(systemid, rom_path), 0)
+		# dropped in under the same name does not inherit the old answer. It does
+		# NOT check the file is there, and must not: the cartridge menu asks it
+		# "did we ask, and what did the server say", which stays a fair question
+		# for a ROM that has since gone.
+		#
+		# Here the question is "what id", where a missing file has to answer
+		# nothing -- and the size and mtime guards cannot tell on their own,
+		# since both read 0 for a file that is absent and a record written with
+		# 0s matches that exactly.
+		if FileAccess.file_exists(rom_path):
+			resolved = maxi(resolved_rom_id(systemid, rom_path), 0)
 	_rom_ids[rom_path] = resolved
 	return resolved
 
