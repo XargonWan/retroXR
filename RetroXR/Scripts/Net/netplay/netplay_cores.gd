@@ -38,17 +38,17 @@ const CORES: Dictionary = {
 		"options": {},
 	},
 	"snes9x": {
-		"verified": false,
-		"state_transfer": false,
+		"verified": true,
+		"state_transfer": true,
 		"rollback": false,
 		"systems": ["super_nes"],
 		"options": {},
 	},
 	"genesis_plus_gx": {
-		"verified": false,
-		"state_transfer": false,
+		"verified": true,
+		"state_transfer": true,
 		"rollback": false,
-		"systems": ["megadrive", "genesis", "master_system", "game_gear"],
+		"systems": ["megadrive", "genesis"],
 		"options": {},
 	},
 }

@@ -95,8 +95,8 @@ func _ready() -> void:
 
 func _test_cores() -> void:
 	_ok(NetplayCores.is_capable("fceumm"), "cores/a vetted core is capable")
-	_ok(not NetplayCores.is_capable("snes9x"),
-		"cores/a listed but unvetted core is not")
+	_ok(not NetplayCores.is_capable("__never_vetted"),
+		"cores/an unvetted core is not")
 	_ok(not NetplayCores.is_capable("dolphin"),
 		"cores/an unlisted core is not")
 	_ok(not NetplayCores.is_capable(""), "cores/no core at all is not")
@@ -108,7 +108,7 @@ func _test_cores() -> void:
 			_ok(NetplayCores.is_capable(core),
 				"cores/%s cannot roll back without being verified" % core)
 	_ok(NetplayCores.rollback_capable("fceumm"), "cores/fceumm rolls back")
-	_ok(not NetplayCores.rollback_capable("snes9x"),
+	_ok(not NetplayCores.rollback_capable("__never_vetted"),
 		"cores/an unvetted core does not roll back")
 
 	# forced_options is handed to a core at start; a caller mutating what it got
@@ -131,7 +131,7 @@ func _test_cores() -> void:
 		"cores/but cannot put a state on the wire")
 	_ok(NetplayCores.state_transfer_capable("fceumm"),
 		"cores/fceumm can do both")
-	_ok(not NetplayCores.state_transfer_capable("snes9x"),
+	_ok(not NetplayCores.state_transfer_capable("__never_vetted"),
 		"cores/an unvetted core can do neither")
 	_ok(not NetplayCores.state_transfer_capable("nonesuch"),
 		"cores/nor an unknown one")
@@ -715,7 +715,7 @@ func _test_start() -> void:
 	# An unverified core is refused before any of this — the allowlist is the
 	# outer gate and nothing about identity can open it.
 	w = await _pair()
-	_ok(not w.host_nm.netplay_start_host(w.host_sys, "snes9x", "MD5",
+	_ok(not w.host_nm.netplay_start_host(w.host_sys, "__never_vetted", "MD5",
 		{0: 1, 1: w.client_id}, 3, 0), "start/an unvetted core cannot host")
 	_ok(not w.host_sys.started, "start/and its core is never even started")
 	_free(w)
@@ -1340,7 +1340,10 @@ func _test_link() -> void:
 	# have passed determinism vetting, refuse the session instead of silently
 	# booting the far machine with the anchor's unrelated core.
 	w = await _pair_cabled()
-	w.host_far.machine_core = "snes9x"
+	# A name no table will ever hold. Using a real-but-unvetted core here ties
+	# the case to that core staying unvetted, and it did not: snes9x passed and
+	# turned this red for a reason that had nothing to do with the bus.
+	w.host_far.machine_core = "__never_vetted"
 	_ok(not w.host_nm.netplay_start_host(w.host_sys, "fceumm", "MD5",
 		{0: 1, 4: w.client_id}, 3, 0),
 		"link/an unverified far-machine core refuses the whole bus")
