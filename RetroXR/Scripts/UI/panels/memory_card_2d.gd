@@ -343,9 +343,16 @@ func _make_row(s: Dictionary) -> Control:
 
 	var icon := TextureRect.new()
 	icon.custom_minimum_size = Vector2(ICON_PX, ICON_PX)
-	# The art is 16x16; keep it crisp rather than smearing it up to 48.
+	# The art is 16x16 on a PlayStation and 32x32 on a GameCube; keep it crisp
+	# rather than smearing it up to 48.
 	icon.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
-	icon.stretch_mode = TextureRect.STRETCH_SCALE
+	# KEEP_ASPECT, not SCALE, and shrunk to its own height rather than filling
+	# the row. A row is as tall as its title, and a GameCube title runs to two or
+	# three lines where a PlayStation one fits on one -- under SCALE that stretched
+	# every GameCube icon into a tall smear, while the PlayStation's short rows
+	# had hidden the same bug for as long as it has been there.
+	icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	icon.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	h.add_child(icon)
 
 	var frames: Array = []
