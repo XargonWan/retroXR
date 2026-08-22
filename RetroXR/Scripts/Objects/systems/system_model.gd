@@ -527,6 +527,23 @@ func slot_insert_depth() -> float:
 	return 0.0
 
 
+## Turn this shell's own disc mechanism with the platter, by `radians` about the
+## spindle axis.
+##
+## RetroSystem already spins the DISC, and for a procedural bay that is the whole
+## of it -- the box draws no mechanism, so there is nothing else to turn. A shell
+## that models one is different: the PlayStation's clamp sits in the disc's
+## centre hole and is visible THROUGH it, so a spinning platter around a fixed
+## hub is a thing the player can see standing still.
+##
+## Handed an angle rather than a speed on purpose. The ramp lives in
+## RetroSystem._update_disc_spin, which already knows about power, seating and
+## spin-down, and a model second-guessing any of that would drift out of step
+## with the disc it is supposed to be turning with.
+func spin_disc_mechanism(_radians: float) -> void:
+	pass
+
+
 ## Optional pivot node the seated disc should physically ride along with,
 ## instead of staying fixed to the console body (see MediaTray.disc_lid_pivot)
 ## — a flip-open tray assembly (the PSP's UMD door) where the disc's resting

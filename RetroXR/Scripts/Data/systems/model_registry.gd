@@ -80,6 +80,9 @@ const _ROWS: Dictionary = {
 	"nes":                  {"platform": "nes", "label": "Nintendo Entertainment System",
 		"scene": _SCENES + "nes.tscn",
 		"requires": ["res://imported-assets/consoles/nes/nes_console.glb"]},
+	"playstation":          {"platform": "playstation", "label": "PlayStation",
+		"script": "res://Scripts/Objects/system_models/playstation_model.gd",
+		"requires": ["res://imported-assets/consoles/playstation/ps1_console.glb"]},
 	# A scene row with the model script on its root: primitive geometry, no GLB, so
 	# there is no `requires` to declare. It also still carries the core options the
 	# Wii cannot run correctly without.

@@ -18,5 +18,33 @@ class_name PsxLinkPort
 extends LinkPort
 
 
+## Whether to draw the silk-screened plate and the SERIAL I/O lettering.
+##
+## On the primitive body it is the only thing naming the socket, so it defaults
+## on. A console with a shell of its own has the legend MOULDED INTO the back
+## panel already, and the plate then lands as a black rectangle pasted over the
+## console's own print -- so RetroSystemModelPlayStation turns this off, the same
+## way it turns off RcaPort.show_jack for sockets the shell already draws.
+##
+## The dark recess is NOT part of this and stays either way: the shell's own
+## socket is bare silver and lights to a bright block under a flat ambient, so
+## the darkness that makes it read as a hole has to come from here.
+@export var show_legend: bool = true:
+	set(value):
+		show_legend = value
+		_apply_legend()
+
+
+func _ready() -> void:
+	super()
+	_apply_legend()
+
+
+func _apply_legend() -> void:
+	var legend := get_node_or_null("Legend") as Node3D
+	if legend != null:
+		legend.visible = show_legend
+
+
 func plug_group() -> String:
 	return "psx_link_plug"

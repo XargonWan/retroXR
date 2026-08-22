@@ -90,6 +90,8 @@ func _ready() -> void:
 	_test_reads_as_lightgun()
 	_test_core_device_id()
 	_test_pad_type_choice()
+	await _test_analog_mode_switch()
+	await _test_playstation_hardware()
 	_test_libretro_port_routing()
 	_test_port_device_cache()
 	_test_cabinet_lookup()
@@ -198,6 +200,161 @@ func _test_core_device_id() -> void:
 # Which pad profile a plugged pad selects (PCSX-ReARMed's padNtype).
 # ---------------------------------------------------------------------------
 
+## Three faults reported from the room, each of which a render had already been
+## used to "confirm" was fine.
+##
+## The lid one is the interesting one: OPEN on a spring-latched lid is a LATCH
+## RELEASE, so RetroSystem deliberately ignores it while it believes the tray is
+## up. Close the lid by hand without telling it and that belief never changes,
+## the next press is correctly ignored, and the button reads as dead.
+func _test_playstation_hardware() -> void:
+	var labels: Array = []
+	for it in SpawnCatalog.items_for("playstation", "PlayStation"):
+		labels.append(String((it as Dictionary).get("label", "")))
+	# A platform that models its own console AND its own pads has no use for the
+	# generic box or the generic pad; they are clutter on its card.
+	_ok("psx/no Primitive System offered", not labels.has("Primitive System"))
+	_ok("psx/no Primitive Controller offered", not labels.has("Primitive Controller"))
+	_ok("psx/the console is still offered", labels.has("PlayStation"))
+	_ok("psx/both pads are offered",
+		labels.has("Controller") and labels.has("DualShock"))
+
+	var sys_scene := load("res://Scenes/Objects/system.tscn") as PackedScene
+	var card_scene := load("res://Scenes/Objects/media/memory_card.tscn") as PackedScene
+	if sys_scene == null or card_scene == null:
+		return
+	var psx: Node3D = sys_scene.instantiate()
+	psx.systemid = "playstation"
+	add_child(psx)
+	var card: Node3D = card_scene.instantiate()
+	add_child(card)
+	for i in range(20):
+		await get_tree().process_frame
+
+	# A controller plug carries a SnapGrabPoint with its own 180 about X, so the
+	# ports roll to compose with it. A memory card has no grab point, so the same
+	# roll simply turns it over -- which is what shipped.
+	var slot := psx.find_child("MemoryCardSlot", true, false) as XRToolsSnapZone
+	if slot != null:
+		slot.enabled = true
+		slot.pick_up_object(card)
+	for i in range(18):
+		await get_tree().process_frame
+	var rel := psx.global_transform.affine_inverse() * card.global_transform
+	_ok("psx/the memory card seats label-up", rel.basis.y.y > 0.9,
+		"up = %.3v" % rel.basis.y)
+
+	var model: Node3D = psx.find_child("Shell", true, false)
+	model = model.get_parent() if model != null else null
+	var eject := psx.find_child("EjectButton", true, false) as VRButton
+	if model == null or eject == null:
+		psx.queue_free()
+		return
+	eject.button_pressed.emit()
+	for i in range(22):
+		await get_tree().process_frame
+	_ok("psx/OPEN raises the lid", float(model.call("get_lid_angle_deg")) > 40.0,
+		"%.1f deg" % model.call("get_lid_angle_deg"))
+	var hinge := psx.find_child("LidHinge", true, false)
+	if hinge != null and hinge.has_method("latch_closed"):
+		hinge.latch_closed()
+	for i in range(22):
+		await get_tree().process_frame
+	_ok("psx/a hand can shut it", float(model.call("get_lid_angle_deg")) < 5.0,
+		"%.1f deg" % model.call("get_lid_angle_deg"))
+	_ok("psx/and the machine learns it is shut", not bool(psx.get("_tray_open")))
+	eject.button_pressed.emit()
+	for i in range(22):
+		await get_tree().process_frame
+	_ok("psx/OPEN works a second time", float(model.call("get_lid_angle_deg")) > 40.0,
+		"%.1f deg" % model.call("get_lid_angle_deg"))
+
+	card.queue_free()
+	psx.queue_free()
+	for n in get_children():
+		if String(n.name).contains("Cable"):
+			n.queue_free()
+	for i in range(4):
+		await get_tree().process_frame
+
+
+## The DualShock's ANALOG switch, which is one flag driving four things: the
+## lamp, the lens emission, the axes the core is told about, and the pad type.
+## Any one of them out of step is the pad saying two different things at once, and
+## none of them is visible from the others -- the lamp can be lit over dead
+## sticks, or the core left on "dualshock" while the pad reports centred.
+##
+## Plugged into a real machine on purpose: the lamp is deliberately dark on an
+## unplugged pad, so a bench test with no console cannot tell "off because
+## digital" from "off because nobody is driving it".
+func _test_analog_mode_switch() -> void:
+	var sys_scene := load("res://Scenes/Objects/system.tscn") as PackedScene
+	var pad_scene := load("res://Scenes/Objects/controllers/playstation/ps1_dualshock.tscn") as PackedScene
+	if sys_scene == null or pad_scene == null:
+		return
+	var psx: Node3D = sys_scene.instantiate()
+	psx.systemid = "playstation"
+	add_child(psx)
+	var pad: Node3D = pad_scene.instantiate()
+	add_child(pad)
+	for i in range(20):
+		await get_tree().process_frame
+
+	# The plug hangs off the CABLE, which RetroController parents to the current
+	# scene rather than to the pad, so it is not under `pad` to be found.
+	var plug: Node3D = null
+	for n in find_children("*", "Node3D", true, false):
+		if n is ControllerPlug:
+			plug = n as Node3D
+			break
+	var port := psx.find_child("ControllerPort1", true, false) as XRToolsSnapZone
+	if port != null and plug != null:
+		port.enabled = true
+		port.pick_up_object(plug)
+	for i in range(24):
+		await get_tree().process_frame
+
+	var glow := pad.find_child("AnalogLampGlow", true, false) as OmniLight3D
+	var btn := pad.get_node_or_null("AnalogButton") as VRButton
+	_ok("analog/plugged in", pad.get("_connected_system") != null)
+	_ok("analog/starts in analogue mode", bool(pad.get("_analog_mode")))
+	_ok("analog/lamp lit", glow != null and glow.visible)
+	_eq("analog/pad type", String(pad.get("pad_type_pref")), "dualshock")
+
+	if btn != null:
+		btn.button_pressed.emit()
+	for i in range(6):
+		await get_tree().process_frame
+	_ok("analog/a poke leaves analogue mode", not bool(pad.get("_analog_mode")))
+	_ok("analog/lamp goes out", glow != null and not glow.visible)
+	var em := 0.0
+	for m in (pad.get("_led_mats") as Array):
+		em = maxf(em, (m as StandardMaterial3D).emission_energy_multiplier)
+	_ok("analog/emission goes out", is_zero_approx(em))
+	_eq("analog/pad type follows", String(pad.get("pad_type_pref")), "standard")
+	pad.call("_send_joypad", 0, 32767, 0, 32767, 0)
+	_ok("analog/digital reports centred sticks",
+		(pad.get("_cur_lstick") as Vector2).is_zero_approx())
+
+	if btn != null:
+		btn.button_pressed.emit()
+	for i in range(6):
+		await get_tree().process_frame
+	_ok("analog/a second poke returns", bool(pad.get("_analog_mode")))
+	_ok("analog/lamp returns", glow != null and glow.visible)
+	pad.call("_send_joypad", 0, 32767, 0, 32767, 0)
+	_ok("analog/sticks report again",
+		not (pad.get("_cur_lstick") as Vector2).is_zero_approx())
+
+	pad.queue_free()
+	psx.queue_free()
+	for n in get_children():
+		if String(n.name).contains("Cable"):
+			n.queue_free()
+	for i in range(4):
+		await get_tree().process_frame
+
+
 func _test_pad_type_choice() -> void:
 	var full: Array = ["standard", "analog", "dualshock"]
 	_eq("pad/dualshock takes dualshock",
@@ -219,6 +376,18 @@ func _test_pad_type_choice() -> void:
 		RetroSystem._decide_pad_type(full, "wavebird", "standard"), "")
 	_eq("pad/plain analog pad",
 		RetroSystem._decide_pad_type(full, "analog", "standard"), "analog")
+
+	# And what the SCENES actually ask for. Everything above is the pure decision,
+	# which was fully covered while no pad in the repo declared "dualshock" at all
+	# -- the branch was reachable only from a test. These are the two that make it
+	# reachable from a player, and a scene quietly losing the property would leave
+	# every case above green.
+	for entry in [["ps1_dualshock", "dualshock"], ["ps1_controller", "standard"]]:
+		var path := "res://Scenes/Objects/controllers/playstation/%s.tscn" % entry[0]
+		var pad: Node = load(path).instantiate()
+		_eq("pad/%s asks for %s" % [entry[0], entry[1]],
+			String(pad.get("pad_type_pref")), String(entry[1]))
+		pad.free()
 
 
 # ---------------------------------------------------------------------------

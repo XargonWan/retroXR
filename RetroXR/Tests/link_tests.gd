@@ -1245,10 +1245,18 @@ func _test_psx_socket_follows_the_hardware() -> void:
 		# Behind the machine, not inside it: the socket has to be reachable by a
 		# hand coming at the back panel, and it sits alongside the A/V row rather
 		# than on top of it.
-		_ok("it is on the back panel", on_psx.position.z < -0.12,
-			"z = %.3f" % on_psx.position.z)
-		_ok("and clear of the A/V sockets", absf(on_psx.position.x - 0.082) > 0.02,
-			"x = %.3f against the A/V row at 0.082" % on_psx.position.x)
+		# Against the machine's OWN panel and its OWN A/V row. Both of these were
+		# constants of the primitive box -- z < -0.12, and the row at x = 0.082 --
+		# and both stopped describing a PlayStation the moment it grew a shell:
+		# a real SCPH-1001 is 187 mm deep against the box's 250, so its panel sits
+		# at -0.093 and a socket correctly on it failed a threshold written for a
+		# machine 60 mm longer.
+		var panel := _rear_panel_z(psx)
+		_ok("it is on the back panel", on_psx.position.z <= panel + 0.002,
+			"z = %.4f against a panel at %.4f" % [on_psx.position.z, panel])
+		var av_gap := _nearest_av_gap(psx, on_psx.position.x)
+		_ok("and clear of the A/V sockets", av_gap > 0.02,
+			"nearest A/V socket is %.1f mm away" % (av_gap * 1000.0))
 		# The machine behind the socket is the one it is bolted to, which is what
 		# the cable resolves through.
 		_eq("and it belongs to that machine", on_psx.get_machine(), psx)
@@ -1393,8 +1401,12 @@ func _test_psx_socket_is_in_the_panel() -> void:
 		lead.queue_free()
 		return
 
-	# The back face of the box, in the machine's own frame.
-	var panel_z: float = body.get_aabb().position.z
+	# The back face of whatever this machine actually wears, in its own frame.
+	# NOT body.get_aabb(): a console with a shell of its own keeps the primitive
+	# SystemBody in the tree and merely HIDDEN, so measuring it compares the
+	# socket against a box no player can see -- and the PlayStation's box reaches
+	# 32 mm further back than its shell does.
+	var panel_z: float = _rear_panel_z(psx)
 
 	# The recess, likewise. Its MOUTH is the end nearest the outside world, which
 	# is the most negative z of the two.
@@ -1449,3 +1461,50 @@ func _test_psx_socket_is_in_the_panel() -> void:
 	psx.queue_free()
 	lead.queue_free()
 	await get_tree().process_frame
+
+
+## The rearmost point of the body this machine actually wears, in its own frame.
+##
+## Deliberately measured off the SHELL when there is one and the primitive
+## SystemBody only when there is not, rather than over every mesh in the machine:
+## the serial port is a child of the machine too, and its recess sits a
+## millimetre proud of the panel, so a blanket sweep would measure the socket
+## against itself and pass no matter where it was put.
+func _rear_panel_z(machine: Node3D) -> float:
+	var shell := machine.find_child("Shell", true, false) as Node3D
+	if shell != null:
+		var best := INF
+		for n in shell.find_children("*", "MeshInstance3D", true, false):
+			var mi := n as MeshInstance3D
+			if mi.mesh == null or not mi.is_visible_in_tree():
+				continue
+			var ab: AABB = mi.get_aabb()
+			for i in 8:
+				var corner := ab.position + Vector3(
+					ab.size.x * float(i & 1),
+					ab.size.y * float((i >> 1) & 1),
+					ab.size.z * float((i >> 2) & 1))
+				best = minf(best, machine.to_local(mi.global_transform * corner).z)
+		if is_finite(best):
+			return best
+	var body := machine.find_child("SystemBody", true, false) as MeshInstance3D
+	return body.get_aabb().position.z if body != null else 0.0
+
+
+## How far the nearest phono socket on this machine is from a given x.
+##
+## Asked of the machine rather than written down, because the two bodies do not
+## agree: the stand-in box puts its row at x = 0.082 with the serial socket 37 mm
+## away, while the real shell's nearest jack -- red AUDIO_R at 0.0236 against the
+## serial at 0.0440 -- leaves barely 20 mm. That is the hardware, not a spacing
+## anyone chose, and it is why this asserts a clearance rather than a position.
+##
+## LinkPort is EXCLUDED, and has to be: PsxLinkPort extends LinkPort extends
+## RcaPort, so a plain `is RcaPort` finds the serial socket itself and reports it
+## as being 0 mm from the A/V row -- a clearance test that can never pass.
+func _nearest_av_gap(machine: Node3D, x: float) -> float:
+	var best := INF
+	for n in machine.find_children("*", "Node3D", true, false):
+		if n is RcaPort and not (n is LinkPort):
+			best = minf(best, absf((n as Node3D).position.x - x))
+	return best if is_finite(best) else INF

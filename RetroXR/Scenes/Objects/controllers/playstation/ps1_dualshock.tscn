@@ -1,0 +1,87 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://Scripts/Objects/controllers/ps1_dualshock.gd" id="1_dsscript"]
+[ext_resource type="Script" path="res://Scripts/Objects/highlights/pickable_highlight.gd" id="2_pickhigh"]
+[ext_resource type="PackedScene" path="res://Scenes/Objects/hand_poses/hand_grip_right.tscn" id="3_rhand"]
+[ext_resource type="PackedScene" path="res://Scenes/Objects/hand_poses/hand_grip_left.tscn" id="4_lhand"]
+[ext_resource type="PackedScene" path="res://imported-assets/controllers/playstation/ps1_dualshock.glb" id="5_dsmodel"]
+[ext_resource type="Script" path="res://Scripts/Objects/widgets/vr_button.gd" id="6_vrbtn"]
+
+[sub_resource type="SphereShape3D" id="Sphere_analog"]
+radius = 0.006
+
+[sub_resource type="PhysicsMaterial" id="PhysMat_ctrl"]
+friction = 0.8
+
+; The whole pad, grips included: 145 x 60 x 92 mm, measured off the asset. Taller
+; than the SCPH-1080's 45 mm because of the sticks, which stand 7 mm proud of the
+; face (y 50.9..59.5 against a shell topping out at 52.6).
+[sub_resource type="BoxShape3D" id="BoxShape3D_body"]
+size = Vector3(0.1449, 0.0595, 0.0923)
+
+[node name="Ps1DualShock" type="RigidBody3D" groups=["hand_held_device"]]
+collision_layer = 4
+collision_mask = 196613
+mass = 0.2
+physics_material_override = SubResource("PhysMat_ctrl")
+freeze_mode = 1
+linear_damp = 5.0
+angular_damp = 8.0
+script = ExtResource("1_dsscript")
+plug_mesh_path = "res://Scenes/Objects/controllers/playstation/ps1_plug.res"
+systemid = "playstation"
+cable_length = 2.0
+pad_type_pref = "dualshock"
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="."]
+shape = SubResource("BoxShape3D_body")
+
+; The .glb rests ON its origin (y -0.01..59.46 mm), so drop it half the body
+; height to sit the pad's middle on the centre of mass.
+[node name="Model" parent="." instance=ExtResource("5_dsmodel")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.0297, 0)
+
+; On the moulded strain relief, not on the collision box's rear plane. This shell
+; carries a Cord_Anchor_DS mesh -- x -4.70..4.80, y 34.00..43.43, z -31.96..-29.41
+; -- so unlike the SCPH-1080, which models no boss and had to be raycast, the
+; asset says where its own cord leaves. Taken at the anchor's centre in x and y
+; and its rearmost face in z, then carried through the model's own -29.7 mm drop.
+[node name="CableAttachPoint" type="Node3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.009, -0.032)
+
+; The ANALOG cap, as something a finger can actually push. Everything else on
+; this pad is driven by the grip and the bindings; this one is a MODE switch on
+; the hardware, so it is poked directly the way the Wii Remote's POWER is.
+;
+; Placed and given its mesh in code rather than here: BtnAnalog's position is a
+; measurement off the shell (Ps1DualShock._build_analog_switch), and writing it
+; twice is how the two drift apart on a re-export. trigger_radius is the cap's
+; own 5.7 x 3.6 mm plus a little, and the travel matches PRESS_SMALL.
+[node name="AnalogButton" type="Area3D" parent="."]
+collision_layer = 0
+collision_mask = 0
+script = ExtResource("6_vrbtn")
+trigger_radius = 0.006
+depress_depth = 0.0004
+contact_margin = 0.003
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="AnalogButton"]
+shape = SubResource("Sphere_analog")
+
+[node name="PickableHighlight" type="Node3D" parent="."]
+script = ExtResource("2_pickhigh")
+
+[node name="PointerArea" type="StaticBody3D" parent="."]
+collision_layer = 1048576
+collision_mask = 0
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="PointerArea"]
+shape = SubResource("BoxShape3D_body")
+
+[node name="HandRight" parent="." instance=ExtResource("3_rhand")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.05, 0, 0.022)
+visible = false
+
+[node name="HandLeft" parent="." instance=ExtResource("4_lhand")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.05, 0, 0.022)
+visible = false

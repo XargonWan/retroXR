@@ -20,6 +20,8 @@ const VB_CONTROLLER_SCENE   := preload("res://Scenes/Objects/controllers/vb/vb_c
 # The NES pad: wears the console's own connector on its cable (plug_mesh_path).
 const NES_CONTROLLER_SCENE  := preload("res://Scenes/Objects/controllers/nes/nes_controller.tscn")
 const A2600_JOYSTICK_SCENE  := preload("res://Scenes/Objects/controllers/atari/atari_2600_cx40.tscn")
+const PS1_CONTROLLER_SCENE  := preload("res://Scenes/Objects/controllers/playstation/ps1_controller.tscn")
+const PS1_DUALSHOCK_SCENE   := preload("res://Scenes/Objects/controllers/playstation/ps1_dualshock.tscn")
 const RETRO_MOUSE_SCENE     := preload("res://Scenes/Objects/peripherals/retro_mouse.tscn")
 # The Super NES Mouse: its own shell and connector, and it fits only a SNES.
 const SNES_MOUSE_SCENE      := preload("res://Scenes/Objects/peripherals/snes_mouse.tscn")
@@ -1079,6 +1081,10 @@ func _on_spawn_requested(type: String) -> void:
 			obj = NES_CONTROLLER_SCENE.instantiate() as Node3D
 		"atari_2600_cx40":
 			obj = A2600_JOYSTICK_SCENE.instantiate() as Node3D
+		"ps1_controller":
+			obj = PS1_CONTROLLER_SCENE.instantiate() as Node3D
+		"ps1_dualshock":
+			obj = PS1_DUALSHOCK_SCENE.instantiate() as Node3D
 		"retro_mouse":
 			obj = RETRO_MOUSE_SCENE.instantiate() as Node3D
 		"snes_mouse":

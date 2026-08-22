@@ -1,0 +1,89 @@
+This directory carries three separately-licensed assets. All are CC-BY-4.0 and
+all require attribution.
+
+
+============================================================
+ps1_pad.glb — the controller
+============================================================
+
+Model Information:
+* title:	Sony Playstation One Controller
+* source:	https://sketchfab.com/3d-models/sony-playstation-one-controller-972c17a0fdaa4760ad9a624b3f3e081e
+* author:	synthetic worlds (https://sketchfab.com/syntheticworlds)
+		mesh & texture by Jon Blenky
+
+Model License:
+* license type:	CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/)
+* requirements:	Author must be credited. Commercial use is allowed.
+
+If you use this 3D model in your project be sure to copy paste this credit wherever you share it:
+This work is based on "Sony Playstation One Controller" (https://sketchfab.com/3d-models/sony-playstation-one-controller-972c17a0fdaa4760ad9a624b3f3e081e) by synthetic worlds (https://sketchfab.com/syntheticworlds) licensed under CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/)
+
+MODIFICATIONS (CC-BY-4.0 requires these be indicated)
+
+Adapted by Tools/glb/prepare_ps1_pad.py:
+
+  * Cleared the "SONY" and "PlayStation" wordmarks and the PS logo glyph from
+    the base-colour sheet, filling with the pad's own sampled plastic grey.
+    SELECT, START and the four face-button symbols are untouched — they are the
+    only labelling the controls have. The normal map was left alone: it is flat
+    across the whole wordmark region (only the button recesses are embossed), so
+    no relief ghost remains.
+  * Rescaled to real-world size (145 mm across, a real SCPH-1080), re-origined
+    centred on its own footprint and resting on y = 0.
+  * Split the single mesh into its 105 disconnected islands and regrouped them
+    into named controls — DPad, BtnCross, BtnCircle, BtnSquare, BtnTriangle,
+    BtnSelect, BtnStart, BtnL1, BtnL2, BtnR1, BtnR2 — plus one PadShell. The
+    geometry is unchanged; only the grouping is. This is what lets each control
+    depress on its own.
+
+Geometry is otherwise unmodified: 2,189 triangles, as published.
+
+
+============================================================
+ps1_dualshock.glb — the DualShock
+============================================================
+
+Taken from "Sony Playstation" by Rusty Hardy (@rustificus), CC-BY-4.0 — the same
+scene the console shell comes from. See
+../../consoles/playstation/LICENSE-playstation.txt for the full credit.
+
+MODIFICATIONS (CC-BY-4.0 requires these be indicated)
+
+Adapted by Tools/glb/split_playstation.py:
+
+  * Cleared the "SONY" and "PlayStation" wordmarks and the PS logo glyph from the
+    Controler_Decals sheet. ANALOG, SELECT and START and the four face-button
+    symbols are untouched: the marks start at y=619 and those legends end at
+    y=617, so one rect takes all three and touches no labelling.
+  * Rescaled to real-world size (145 x 60 x 92 mm, a real SCPH-1200), re-origined
+    centred on its own footprint and resting on y = 0.
+  * Reduced from 147,072 triangles to 9,285, welded first and with the imported
+    custom split normals dropped and shading re-derived by angle.
+  * Separated the D-pad into its own named mesh so the rocker can travel. The
+    four face buttons, both shoulder pairs and SELECT/START are one connected
+    surface in the artist's mesh and could not be separated.
+
+The two plug ends in that scene are the same mesh rotated, so the one plug below
+serves this pad as well.
+
+
+============================================================
+ps1_plug.glb — the controller connector
+============================================================
+
+Taken from "Sony Playstation" by Rusty Hardy (@rustificus), CC-BY-4.0 — the same
+scene the console shell comes from. See
+../../consoles/playstation/LICENSE-playstation.txt for the full credit and the
+list of modifications, which covers this part.
+
+The two plug ends in that scene are the same mesh rotated, so one plug serves the
+controller.
+
+
+============================================================
+
+Nothing here is affiliated with, endorsed by, or sponsored by Sony. Trademarked
+wording and logos have been removed from the assets as shipped; "Sony" and
+"PlayStation" remain trademarks of Sony Interactive Entertainment and are used,
+where unavoidable, only descriptively.

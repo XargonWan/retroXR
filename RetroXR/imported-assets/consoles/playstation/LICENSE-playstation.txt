@@ -1,0 +1,93 @@
+Model Information:
+* title:	Sony Playstation
+* source:	https://sketchfab.com/3d-models/sony-playstation-c475c9128a9445d8a5e7377714f57e9f
+* author:	Rusty Hardy (https://sketchfab.com/rustificus)
+
+Model License:
+* license type:	CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/)
+* requirements:	Author must be credited. Commercial use is allowed.
+
+If you use this 3D model in your project be sure to copy paste this credit wherever you share it:
+This work is based on "Sony Playstation" (https://sketchfab.com/3d-models/sony-playstation-c475c9128a9445d8a5e7377714f57e9f) by Rusty Hardy (https://sketchfab.com/rustificus) licensed under CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/)
+
+
+			------------------------------
+
+MODIFICATIONS (CC-BY-4.0 requires these be indicated)
+
+The source is a single posed scene (console, memory card, both pad variants, two
+plug ends, eight game jewel cases, two baked cords). It was split into five
+per-part GLBs by Tools/glb/split_playstation.py:
+
+  ps1_console.glb      consoles/playstation/
+  ps1_memory_card.glb  consoles/playstation/
+  ps1_plug.glb         controllers/playstation/   (the controller connector)
+
+Both PADS from this scene were extracted and then DROPPED. Their four face
+buttons, both shoulder pairs and SELECT/START are one connected surface (11,784
+triangles in a single island), so no separation recovers them and no button can
+be animated. RetroXR uses synthetic worlds' SCPH-1080 pad instead — see
+../../controllers/playstation/LICENSE-playstation-controllers.txt.
+
+TRADEMARK REMOVAL
+
+  * Deleted the raised "PS" logo plate on the disc lid (object PSX|Lid.001,
+    material LID_Logo), and with it the logo texture.
+  * Cleared the "SONY" and "PlayStation" wordmarks from the console's
+    Lid_Decals sheet. Nothing else was on that texture, so it is now flat.
+  * Cleared the "SONY" and "PlayStation" wordmarks from the console's
+    Lid_Buttons_Ports_Smooth sheet, which also carries functional legends. Only
+    the two marks were erased; OPEN, POWER, RESET, MEMORY CARD and the port
+    numbers 1 and 2 are untouched.
+  * Cleared "PlayStation" and the PS logo glyph from the memory card's
+    MCard_Decals sheet. "MEMORY CARD" is untouched.
+
+  The four face-button symbols (triangle, circle, cross, square) are KEPT as
+  functional control legends, on the same basis as the console's POWER/RESET
+  legends: without them the pad's controls are unlabelled.
+
+  The rear-panel legends are all functional and are kept: SERIAL I/O,
+  PARALLEL I/O, AV MULTI OUT, VIDEO OUT, AUDIO OUT L (MONO) / R, RF DC OUT,
+  AC IN.
+
+THIRD-PARTY ARTWORK REMOVAL
+
+  * Deleted all eight game jewel cases and their cover, booklet and disc art:
+    Final Fantasy Tactics, Final Fantasy VII, Resident Evil, Twisted Metal 2,
+    Legacy of Kain, Bushido Blade, Wild Arms 2, Breath of Fire III and Jet Moto.
+    These are the publishers' artwork, not the model author's, and none of it is
+    covered by this model's licence. Nine textures went with them.
+  * Replaced the licensed character sticker on the memory card (Street Fighter's
+    Chun-Li) with a blank white label.
+
+GEOMETRY AND SCENE CHANGES
+
+  * Deleted both baked controller cords (DS_Chord, ControlerStan_Chord) and the
+    rubber band prop. RetroXR simulates every cord with a VerletRope.
+  * Deleted the artist's discs. They measure 159.5 mm across against a CD's 120
+    at any scale factor; RetroXR builds discs from MediaDimensions at runtime.
+  * Rescaled the whole scene by 1/2.2732, undoing the display scale the author
+    applied. This recovers the authored real-world dimensions: the console lands
+    at 264.6 x 54.4 x 186.7 mm and the memory card at 38.2 x 7.4 x 56.0 mm.
+  * Re-origined each part: centred on its own footprint and resting on y = 0.
+  * Removed the display poses. The pads were yawed 24 and 42 degrees and tilted
+    16 degrees on the render desk; the disc lid was modelled 50 degrees open.
+    All are now axis-aligned, and the lid ships shut.
+  * Rotated the plug 180 degrees so its connector faces +Z with the cord
+    trailing -Z, and moved its origin to the housing's mating shoulder, which is
+    the contract ControllerPlug.set_plug_mesh() reads.
+  * Separated the console's single Buttons mesh into ButtonPower / ButtonReset /
+    ButtonOpen, and its single FrontPorts mesh into Port1 / Port2 / MemCard1 /
+    MemCard2, so each control can travel and each socket can be measured.
+  * Renamed the shell's nodes from Sketchfab's "PSX|Name|Dupli|N" form to
+    descriptive names (Lid, Buttons, PowerLight, FrontPorts, DiscCradle,
+    LaserBed, Spindle, LaserTrolley, JackAC, ParallelPortCover, ShellBottom,
+    ShellTop) so the moving parts can be bound by name.
+  * Decimated from 1,681,436 triangles to ~34,000 across the parts kept, after a
+    weld, with per-part floors so the button caps keep their shape.
+    The console shell is otherwise unchanged geometry by the original author.
+
+Nothing here is affiliated with, endorsed by, or sponsored by Sony. Trademarked
+wording and logos have been removed from the asset as shipped; "Sony",
+"PlayStation" and "DualShock" remain trademarks of Sony Interactive
+Entertainment and are used, where unavoidable, only descriptively.

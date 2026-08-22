@@ -1955,6 +1955,12 @@ func _update_disc_spin(delta: float) -> void:
 	# A disc being grabbed out keeps its pose (it's no longer frozen in the bay).
 	if _disc_spin > 0.0 and disc.freeze and disc.can_visually_spin():
 		disc.rotate_object_local(Vector3.UP, _disc_spin * delta)
+	# The shell's own mechanism turns with the motor, NOT with the platter: a disc
+	# lifted out mid-spin stops being rotated here, and a turntable that stopped
+	# dead with it would be reporting the hand rather than the motor. Models
+	# without a modelled mechanism ignore this.
+	if _disc_spin > 0.0 and _model != null:
+		_model.spin_disc_mechanism(_disc_spin * delta)
 
 
 ## Touch-screen feed (dual-screen handhelds): uv is a point in the COMPOSITE
@@ -2990,6 +2996,14 @@ func _reannounce_port_devices() -> void:
 
 ## Re-apply every plugged pad's preferred pad type. Called when the option set
 ## first becomes known (options_ready), covering pads plugged before core start.
+## Re-apply every port's pad-type option. Public because a pad can change its own
+## mode while it stays plugged in: a DualShock toggled out of analogue mode is the
+## same controller reporting a different pad_type_pref, and the core option has to
+## follow it without the cable being pulled and pushed back.
+func reapply_pad_types() -> void:
+	_reapply_pad_types()
+
+
 func _reapply_pad_types() -> void:
 	for i in range(_port_controllers.size()):
 		var ctrl: Node = _port_controllers[i]

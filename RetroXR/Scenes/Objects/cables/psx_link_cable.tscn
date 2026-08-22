@@ -24,7 +24,7 @@
 ; which is the convention every port in the room places against, so the body is
 ; offset half its depth along -Z rather than sitting centred on the origin.
 [sub_resource type="BoxMesh" id="BoxMesh_body"]
-size = Vector3(0.021, 0.011, 0.024)
+size = Vector3(0.018, 0.0068, 0.024)
 
 [sub_resource type="StandardMaterial3D" id="Mat_shell"]
 albedo_color = Color(0.62, 0.61, 0.58, 1)
@@ -35,7 +35,7 @@ roughness = 0.65
 ; PlugTip's AABB alone, so folding the nose into that mesh would push the anchor
 ; forward and run the tail out through the barrel.
 [sub_resource type="BoxMesh" id="BoxMesh_nose"]
-size = Vector3(0.017, 0.007, 0.007)
+size = Vector3(0.014, 0.0028, 0.007)
 
 ; Bare metal on the nose, lightly metallic. A fully metallic surface takes its
 ; colour from what it reflects, and a room with no sky and no reflection probe
@@ -49,7 +49,7 @@ roughness = 0.4
 
 ; Shell and nose together, 31 mm end to end, centred 8.5 mm behind the face.
 [sub_resource type="BoxShape3D" id="BoxShape3D_plug"]
-size = Vector3(0.021, 0.011, 0.031)
+size = Vector3(0.018, 0.0068, 0.031)
 
 [sub_resource type="PhysicsMaterial" id="PhysMat_plug"]
 bounce = 0.0

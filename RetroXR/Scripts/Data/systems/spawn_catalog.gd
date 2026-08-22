@@ -37,7 +37,13 @@ const PRIMITIVE_CONTROLLER := "retro_controller"
 ## Every non-handheld gets the "Primitive Controller" row appended by items_for
 ## below, so a platform losing its entry here loses a name, not a way to play.
 const _PERIPHERALS: Dictionary = {
+	# Both pads are named here rather than left to the generic Controllers row
+	# because the console moulds its own sockets and each pad wears the matching
+	# connector (plug_mesh_path), so they only look right together. The digital
+	# pad shipped with the console; the DualShock is the later one you bought.
 	"playstation": [
+		{"kind": "peripheral", "label": "Controller", "spawn": "ps1_controller"},
+		{"kind": "peripheral", "label": "DualShock", "spawn": "ps1_dualshock"},
 		{"kind": "peripheral", "label": "Memory Card", "spawn": "memory_card"},
 	],
 	"playstation2": [
@@ -103,7 +109,7 @@ const _PERIPHERALS: Dictionary = {
 ## Platforms that model their own console AND their own pad, so the generic
 ## stand-ins are only clutter on their card. Everything else keeps them: for a
 ## platform with no hardware of its own they are the whole way to play it.
-const _NO_STANDINS: Array[String] = ["nes", "atari_2600"]
+const _NO_STANDINS: Array[String] = ["nes", "atari_2600", "playstation"]
 
 
 ## Platforms that name their own A/V lead above, so the generic one would be a
