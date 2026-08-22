@@ -192,11 +192,15 @@ func get_controller_port_count() -> int:
 	return 2
 
 
-## True when this hardware saves to removable memory cards (CD-era consoles).
-## Enables the MemoryCardSlot snap zone; cartridge systems keep saves on the
-## cartridge itself and return false.
-func uses_memory_cards() -> bool:
-	return false
+## How many removable card slots this SHELL has, or -1 for "no opinion, ask the
+## system descriptor". Enables that many card snap zones.
+##
+## -1 rather than 0 is the whole point: a shell that has never thought about
+## cards must not out-vote its console's descriptor, while a shell that returns 0
+## is saying something stronger — this hardware has none, whatever the descriptor
+## claims. Cartridge systems keep saves on the cartridge and mean the second one.
+func card_slot_count() -> int:
+	return -1
 
 
 ## True for handheld hardware (Game Boy family): the device has a built-in
@@ -284,8 +288,12 @@ func set_lid_angle_deg(_open_deg: float) -> void:
 	pass
 
 
-## Reposition the memory-card snap zone to the model's physical card slot.
-func configure_memory_card_slot(_slot: Node3D) -> void:
+## Reposition one memory-card snap zone onto the model's physical card slot.
+## `index` is the slot, 0-based, in the same order card_slot_count() counts them.
+##
+## Called only for slots this model actually has, and called LAST in the slot
+## setup, so a shell whose slots sit behind a door can shut them again here.
+func configure_memory_card_slot(_slot: Node3D, _index: int) -> void:
 	pass
 
 

@@ -514,35 +514,39 @@ func _populate_systems_detail(systemid: String, vbox: VBoxContainer) -> void:
 		btn.alignment = HORIZONTAL_ALIGNMENT_LEFT
 		btn.add_theme_font_size_override("font_size", 26)
 		var token := SpawnCatalog.spawn_token(systemid, item)
-		# Only the PlayStation's shelf is real. The PS2 and GameCube rows spawn a
-		# card their consoles have no slot for, so browsing a PlayStation card
-		# list from them would be a straight lie about what they can hold.
-		if token == "memory_card" and systemid == MemoryCardBrowser.SYSTEMID:
+		# A shelf is only offered for a console that actually takes cards — one
+		# with no card_family gets the plain row, because browsing another
+		# console's cards from it would be a lie about what it can hold.
+		var card_fmt := CardFormats.for_system(systemid)
+		if token.ends_with("memory_card") and card_fmt != null:
 			# This row does one of two different things, so it says which. With
 			# cards saved it opens the shelf and drops the +, because every other
 			# + on this page puts something in the room on the first press.
-			var cards := MemoryCardBrowser.card_count()
+			var cards := MemoryCardBrowser.card_count(card_fmt.id())
 			if cards > 0:
 				btn.text = "     %s      %d card%s" \
 					% [str(item.get("label", "Memory Card")), cards, "" if cards == 1 else "s"]
-			btn.pressed.connect(_on_system_memcard_pressed.bind(systemid, vbox))
+			btn.pressed.connect(
+				_on_system_memcard_pressed.bind(systemid, card_fmt.id(), vbox))
 		else:
 			btn.pressed.connect(spawn_requested.emit.bind(token))
 		vbox.add_child(btn)
 	vbox.add_child(MenuStyle.spacer(8))
 
 
-## The PlayStation's card shelf, opened from the console's own page. It takes
-## that page over, so Back returns to the console you came from.
+## A console's card shelf, opened from its own page. It takes that page over, so
+## Back returns to the console you came from.
 ##
 ## Nothing saved yet means there is nothing to choose between, so the row keeps
 ## its plain behaviour and spawns a blank card.
-func _on_system_memcard_pressed(systemid: String, vbox: VBoxContainer) -> void:
-	if not MemoryCardBrowser.has_cards():
-		spawn_requested.emit("memory_card")
+func _on_system_memcard_pressed(systemid: String, family: String,
+		vbox: VBoxContainer) -> void:
+	if not MemoryCardBrowser.has_cards(family):
+		spawn_requested.emit("%s_memory_card" % family)
 		return
 	_clear_children(vbox)
 	var b := MemoryCardBrowser.new()
+	b.family = family
 	b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	b.add_theme_constant_override("separation", 10)
 	# Deferred: both handlers tear down the browser that is emitting them.

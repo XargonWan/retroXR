@@ -59,6 +59,7 @@ const CART_SCENE             := preload("res://Scenes/Objects/media/cartridge.ts
 const DISC_SCENE             := preload("res://Scenes/Objects/media/disc.tscn")
 const UMD_DISC_SCENE         := preload("res://Scenes/Objects/media/umd_disc.tscn")
 const MEMCARD_SCENE          := preload("res://Scenes/Objects/media/memory_card.tscn")
+const GC_MEMCARD_SCENE       := preload("res://Scenes/Objects/media/gc_memory_card.tscn")
 const BOOK_SCENE             := preload("res://Scenes/Objects/media/pdf_book.tscn")
 const POSTER_SCENE           := preload("res://Scenes/Objects/media/poster.tscn")
 const RETRO_CONTROLLER_SCENE := preload("res://Scenes/Objects/controllers/retro_controller.tscn")
@@ -996,7 +997,12 @@ func _restore_entry(root: Node, id: int, spawned: Dictionary, entries: Dictionar
 			sys.restore_cartridge(cart)
 		var memcard := _resolve_ref(root, spawned, d.get("memcard")) as MemoryCard
 		if memcard:
-			sys.restore_memory_card(memcard)
+			sys.restore_memory_card(memcard, 0)
+		# Slot B is its own key rather than the pair becoming an array: an array
+		# would not load in any room file saved before there was a second slot.
+		var memcard_b := _resolve_ref(root, spawned, d.get("memcard_b")) as MemoryCard
+		if memcard_b:
+			sys.restore_memory_card(memcard_b, 1)
 		# After the media, and deferred: seating a cartridge swings the bay open (the
 		# NES flap) and tweens it there, either of which would otherwise win over the
 		# pose the system restored when its model loaded.
@@ -1214,7 +1220,8 @@ func _serialize_node(node: Node, id: int, node_to_id: Dictionary) -> Dictionary:
 			"model_id": sys.model_id,
 			"tv": _ref(node_to_id, sys.connected_tv),
 			"cartridge": _ref(node_to_id, sys.get_snapped_cartridge()),
-			"memcard": _ref(node_to_id, sys.get_snapped_memcard()),
+			"memcard": _ref(node_to_id, sys.get_snapped_memcard(0)),
+			"memcard_b": _ref(node_to_id, sys.get_snapped_memcard(1)),
 			"video_out": sys.video_out_enabled,
 			"ignore_gravity": sys.ignore_gravity,
 		})
@@ -1290,6 +1297,7 @@ func _serialize_node(node: Node, id: int, node_to_id: Dictionary) -> Dictionary:
 	elif node is MemoryCard:
 		var card := node as MemoryCard
 		return _base(id, "memory_card", n3d).merged({
+			"family": card.family,
 			"card_id": card.card_id,
 			"card_label": card.card_label,
 		})
@@ -1559,7 +1567,12 @@ func _deserialize_object(data: Dictionary) -> Node3D:
 				_apply_media_fields(disc, data)
 				obj = disc
 			"memory_card":
-				var card := MEMCARD_SCENE.instantiate() as MemoryCard
+				# A room saved before there were two families holds no family at
+				# all, and every card in one is a PlayStation card.
+				var family := str(data.get("family", "playstation"))
+				var scene := GC_MEMCARD_SCENE if family == "gamecube" 					else MEMCARD_SCENE
+				var card := scene.instantiate() as MemoryCard
+				card.family = family
 				card.card_id = data.get("card_id", "")
 				card.card_label = data.get("card_label", "MEMORY CARD")
 				obj = card

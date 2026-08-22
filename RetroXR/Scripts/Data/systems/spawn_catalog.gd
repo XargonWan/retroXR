@@ -59,6 +59,9 @@ const _PERIPHERALS: Dictionary = {
 	"wii": [
 		{"kind": "peripheral", "label": "Wiimote", "spawn": "wiimote"},
 		{"kind": "peripheral", "label": "Nunchuk", "spawn": "nunchuk"},
+		# A Wii playing a GameCube disc writes to a GameCube card, and its two
+		# slots are real — under the memory flap beside the controller ports.
+		{"kind": "peripheral", "label": "Memory Card", "spawn": "memory_card"},
 		# Offered here too, because the games that need it need it absolutely:
 		# without the dongle a remote reports no rotation and Wii Sports Resort
 		# will not start.

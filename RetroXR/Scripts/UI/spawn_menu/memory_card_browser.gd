@@ -1,11 +1,11 @@
-## MemoryCardBrowser — the spawn menu's PlayStation memory-card shelf.
+## MemoryCardBrowser — the spawn menu's memory-card shelf for one console family.
 ##
 ## Two pages, one visible at a time:
 ##   list   : one row per card that exists on disk. Tap it to bring that card
 ##            into the room; tap its right-hand button to read what is saved on
 ##            it without spawning anything. "New Memory Card" at the bottom.
 ##   saves  : that card's save list, the same view the card's own panel shows,
-##            read straight off the .mcr.
+##            read straight off the card image.
 ##
 ## A card only exists on disk once it has been seated in a powered console, so a
 ## freshly spawned card that has never been used is deliberately not listed —
@@ -13,8 +13,8 @@
 class_name MemoryCardBrowser
 extends VBoxContainer
 
-## Carries a spawn token for SpawnMenuController: "memory_card" for a new blank
-## one, "memcard:<card_id>" to bring an existing card back.
+## Carries a spawn token for SpawnMenuController: "<family>_memory_card" for a
+## new blank one, "memcard:<family>:<card_id>" to bring an existing card back.
 signal spawn_requested(token: String)
 ## The player backed out of the card list.
 signal closed
@@ -26,9 +26,9 @@ signal notice(text: String, seconds: float)
 ## it draws neither: it says where it is and lets the one header do the walking.
 signal page_changed(title: String, on_back: Callable)
 
-## Only the PlayStation has removable cards, so this browses its folder rather
-## than asking which console was meant.
-const SYSTEMID := CardSaveOps.SYSTEMID
+## Which family's shelf this is. Set by the host before open(); the card format
+## follows from it.
+var family := "playstation"
 
 ## How long a delete stays armed. Matches the ROM rows' confirm window.
 const ARM_SECONDS := 3.0
@@ -44,21 +44,27 @@ var _armed_slot := ""
 ## A directory listing, not list_cards: that opens and parses every image to
 ## count its saves and free blocks, and the callers here only want how many
 ## there are — a number the console page asks for every time it is drawn.
-static func card_count() -> int:
-	var dir := SramPaths.cards_dir(SYSTEMID)
-	if not DirAccess.dir_exists_absolute(dir):
+static func card_count(a_family: String) -> int:
+	var fmt := CardFormats.for_family(a_family)
+	var dir := SramPaths.cards_dir(a_family)
+	if fmt == null or not DirAccess.dir_exists_absolute(dir):
 		return 0
 	var n := 0
 	for f: String in DirAccess.get_files_at(dir):
-		if f.get_extension().to_lower() == "mcr":
+		if f.get_extension().to_lower() == fmt.extension():
 			n += 1
 	return n
 
 
 ## Any card images on disk? With none there is nothing to choose between, and
 ## the caller should just spawn a blank one.
-static func has_cards() -> bool:
-	return card_count() > 0
+static func has_cards(a_family: String) -> bool:
+	return card_count(a_family) > 0
+
+
+## The format this shelf's cards are in.
+func _fmt() -> CardFormat:
+	return CardFormats.for_family(family)
 
 
 ## Show the card list (rebuilt each time — cards are written as you play).
@@ -79,19 +85,20 @@ func _page(title_text: String, on_back: Callable) -> void:
 
 func _build_list() -> void:
 	_clear()
-	_page("PlayStation Memory Cards", func() -> void: closed.emit())
+	_page("%s Memory Cards" % _fmt().label(), func() -> void: closed.emit())
 
-	# Where the cards actually are. They are ordinary .mcr images that any PS1
-	# card tool opens, so saying where they live is the difference between a
-	# closed box and a folder you can back up, copy or edit outside RetroXR.
-	add_child(MenuStyle.hint(SramPaths.cards_dir(SYSTEMID)))
+	# Where the cards actually are. They are ordinary card images that any tool
+	# for that console opens, so saying where they live is the difference between
+	# a closed box and a folder you can back up, copy or edit outside RetroXR.
+	add_child(MenuStyle.hint(SramPaths.cards_dir(family)))
 
-	for card: Dictionary in SramPaths.list_cards(SYSTEMID):
+	for card: Dictionary in SramPaths.list_cards(family):
 		add_child(_card_row(card))
 
 	add_child(MenuStyle.spacer(6))
 	var new_btn := MenuStyle.row_button("  +  New Memory Card", 26, 0, 80, false)
-	new_btn.pressed.connect(func() -> void: spawn_requested.emit("memory_card"))
+	new_btn.pressed.connect(
+		func() -> void: spawn_requested.emit("%s_memory_card" % family))
 	add_child(new_btn)
 	add_child(MenuStyle.spacer(10))
 
@@ -117,11 +124,12 @@ func _card_row(card: Dictionary) -> Control:
 	var saves := int(card["saves"])
 	var free := int(card["free"])
 	var spawn_btn := MenuStyle.row_button("")
-	spawn_btn.text = "  +  %s      %d save%s · %d block%s free%s" \
+	var unit := _fmt().unit_noun()
+	spawn_btn.text = "  +  %s      %d save%s · %d %s%s free%s" \
 		% [card["label"], saves, "" if saves == 1 else "s",
-		   free, "" if free == 1 else "s", _where(card, saves)]
-	spawn_btn.pressed.connect(
-		func() -> void: spawn_requested.emit("memcard:%s" % card["card_id"]))
+		   free, unit, "" if free == 1 else "s", _where(card, saves)]
+	spawn_btn.pressed.connect(func() -> void:
+		spawn_requested.emit("memcard:%s:%s" % [family, card["card_id"]]))
 	row.add_child(spawn_btn)
 
 	var view_btn := Button.new()
@@ -172,7 +180,7 @@ func _commit_rename(card: Dictionary, text: String) -> void:
 		return
 	_editing_id = ""
 	var old_id := str(card["card_id"])
-	var new_id := SramPaths.rename_card(old_id, text)
+	var new_id := SramPaths.rename_card(old_id, text, family)
 	if new_id.is_empty():
 		push_warning("[MemoryCardBrowser] a card named '%s' already exists" % text)
 	elif new_id != old_id:
@@ -206,7 +214,8 @@ func _build_restore(card: Dictionary) -> void:
 	var status := MenuStyle.label("Asking RomM…", 20, MenuStyle.COLOR_DESC)
 	add_child(status)
 
-	SaveSync.list_card_saves(SYSTEMID, func(ok: bool, saves: Array) -> void:
+	SaveSync.list_card_saves(family, _fmt().save_extension(),
+			func(ok: bool, saves: Array) -> void:
 		if not is_inside_tree():
 			return
 		status.queue_free()
@@ -219,8 +228,8 @@ func _build_restore(card: Dictionary) -> void:
 			return
 
 		var data := FileAccess.get_file_as_bytes(str(card["path"]))
-		var free := PS1Card.free_blocks(data)
-		var present := CardSaveOps.present_slots(data)
+		var free := _fmt().free_blocks(data)
+		var present := CardSaveOps.present_slots(_fmt(), data)
 		for s: Dictionary in saves:
 			add_child(_restore_row(card, s, present, free)))
 
@@ -228,8 +237,8 @@ func _build_restore(card: Dictionary) -> void:
 func _restore_row(card: Dictionary, s: Dictionary, present: Dictionary, free: int) -> Control:
 	var row := MenuStyle.hbox(8)
 	var slot := str(s["slot"])
-	var blocks := CardSaveOps.blocks_of(s)
-	var reason := CardSaveOps.restore_blocker(s, present, free)
+	var blocks := CardSaveOps.blocks_of(_fmt(), s)
+	var reason := CardSaveOps.restore_blocker(_fmt(), s, present, free)
 
 	var btn := MenuStyle.row_button("", 24)
 	var rom_name := str(s.get("rom_name", ""))
@@ -250,7 +259,7 @@ func _restore(card: Dictionary, s: Dictionary) -> void:
 	var status := MenuStyle.label("Downloading…", 20, MenuStyle.COLOR_DESC)
 	add_child(status)
 
-	CardSaveOps.restore_save(get_tree(), str(card["path"]), str(card["card_id"]), s,
+	CardSaveOps.restore_save(get_tree(), _fmt(), str(card["path"]), str(card["card_id"]), s,
 		func(problem: String) -> void:
 			if not is_inside_tree():
 				return
@@ -267,8 +276,8 @@ func _build_saves(card: Dictionary) -> void:
 	_page(str(card["label"]), _build_list)
 
 	var data := FileAccess.get_file_as_bytes(str(card["path"]))
-	var saves := PS1Card.list_saves(data)
-	var free := PS1Card.free_blocks(data)
+	var saves := _fmt().list_saves(data)
+	var free := _fmt().free_blocks(data)
 
 	if SaveSync.is_available():
 		# No glyph: the icon font carries symbols only, so a button holding both a
@@ -300,7 +309,7 @@ func _build_saves(card: Dictionary) -> void:
 	ui.synced_slots = CardSaveOps.synced_slots(str(card["path"]), saves)
 	ui.backed_up_slots = CardSaveOps.backed_up_slots(str(card["path"]), saves)
 	ui.sync_available = SaveSync.is_available()
-	ui.populate(str(card["label"]), saves, free)
+	ui.populate(str(card["label"]), saves, free, _fmt().total_blocks(data), _fmt())
 
 
 ## Opt one save in or out — see CardSaveOps.backup_save, which uploads at once
@@ -313,7 +322,8 @@ func _toggle_save_sync(card: Dictionary, s: Dictionary, on: bool) -> void:
 		return
 
 	notice.emit("Uploading %s…" % CardSaveOps.title_of(s), 8.0)
-	CardSaveOps.backup_save(str(card["path"]), s, func(ok: bool, message: String) -> void:
+	CardSaveOps.backup_save(_fmt(), str(card["path"]), s,
+			func(ok: bool, message: String) -> void:
 		if not is_inside_tree():
 			return
 		notice.emit(message, 5.0 if not ok else 2.5)
@@ -344,7 +354,7 @@ func _delete_save(card: Dictionary, s: Dictionary) -> void:
 				_build_saves(card))
 		return
 	_armed_slot = ""
-	if not CardSaveOps.delete_save(get_tree(), str(card["path"]),
+	if not CardSaveOps.delete_save(get_tree(), _fmt(), str(card["path"]),
 			str(card["card_id"]), int(s["block"])):
 		push_warning("[MemoryCardBrowser] could not delete '%s'" % slot)
 	_build_saves(card)
@@ -359,16 +369,16 @@ func _build_move(card: Dictionary, s: Dictionary) -> void:
 
 	var blocks := int(s["blocks"])
 	var any := false
-	for dest: Dictionary in SramPaths.list_cards(SYSTEMID):
+	for dest: Dictionary in SramPaths.list_cards(family):
 		if str(dest["card_id"]) == str(card["card_id"]):
 			continue
 		any = true
 		var reason := _in_use_reason(dest)
 		var data := FileAccess.get_file_as_bytes(str(dest["path"]))
 		if reason.is_empty():
-			if PS1Card.block_of(data, str(s["name"])) != -1:
+			if _fmt().block_of(data, str(s["name"])) != -1:
 				reason = "already has this save"
-		var free := PS1Card.free_blocks(data)
+		var free := _fmt().free_blocks(data)
 		if reason.is_empty() and free < blocks:
 			reason = "needs %d blocks, %d free" % [blocks, free]
 
@@ -391,18 +401,19 @@ func _build_move(card: Dictionary, s: Dictionary) -> void:
 ## that left one card and never arrived at the other.
 func _do_move(src: Dictionary, dest: Dictionary, s: Dictionary) -> void:
 	var src_data := FileAccess.get_file_as_bytes(str(src["path"]))
-	var mcs := PS1Card.extract_save(src_data, int(s["block"]))
-	if mcs.is_empty():
+	var lifted := _fmt().extract_save(src_data, int(s["block"]))
+	if lifted.is_empty():
 		push_warning("[MemoryCardBrowser] could not read the save to move")
 		_build_saves(src)
 		return
-	var merged := PS1Card.insert_save(FileAccess.get_file_as_bytes(str(dest["path"])), mcs)
-	if merged.is_empty() or not CardSaveOps.write_card(get_tree(), str(dest["path"]),
+	var merged := _fmt().insert_save(
+		FileAccess.get_file_as_bytes(str(dest["path"])), lifted)
+	if merged.is_empty() or not CardSaveOps.write_card(get_tree(), _fmt(), str(dest["path"]),
 			str(dest["card_id"]), merged):
 		push_warning("[MemoryCardBrowser] move aborted — nothing was changed")
 		_build_saves(src)
 		return
-	if not CardSaveOps.delete_save(get_tree(), str(src["path"]),
+	if not CardSaveOps.delete_save(get_tree(), _fmt(), str(src["path"]),
 			str(src["card_id"]), int(s["block"])):
 		push_warning("[MemoryCardBrowser] '%s' was copied to '%s' but could not be "
 			% [s["name"], dest["label"]] + "removed from '%s' — it is on both" % src["label"])

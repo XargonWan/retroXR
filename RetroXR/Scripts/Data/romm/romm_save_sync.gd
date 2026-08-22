@@ -331,11 +331,14 @@ func platform_id_for(systemid: String) -> int:
 ## belongs to, delivered to `callback(ok, saves)` on the main thread. Entries add
 ## "rom_name" to the usual save fields.
 ##
-## Narrowed on the server by platform, not just by the .mcs extension: an
+## Narrowed on the server by platform, not just by the save extension: an
 ## extension is a naming convention, and a save uploaded against another console
 ## could carry it. The restore path writes into a card, so what it offers has to
 ## be the platform's own saves.
-func list_card_saves(systemid: String, callback: Callable) -> void:
+##
+## `save_ext` is the card family's own single-save extension — "mcs" for a
+## PlayStation, "gci" for a GameCube.
+func list_card_saves(systemid: String, save_ext: String, callback: Callable) -> void:
 	if config == null or not config.is_configured():
 		callback.call(false, [])
 		return
@@ -351,12 +354,12 @@ func list_card_saves(systemid: String, callback: Callable) -> void:
 		_list_thread.wait_to_finish()
 	_list_busy = true
 	_list_thread = Thread.new()
-	_list_thread.start(_card_list_worker.bind(platform_id, callback,
+	_list_thread.start(_card_list_worker.bind(platform_id, save_ext, callback,
 		config.base_url, config.auth_headers()))
 
 
-func _card_list_worker(platform_id: int, callback: Callable, base_url: String,
-					   headers: PackedStringArray) -> void:
+func _card_list_worker(platform_id: int, save_ext: String, callback: Callable,
+					   base_url: String, headers: PackedStringArray) -> void:
 	var http := RommHttp.new()
 	if http.open(base_url, _aborting) != RommHttp.Result.OK:
 		_list_done.call_deferred(callback, false, [])
@@ -368,7 +371,7 @@ func _card_list_worker(platform_id: int, callback: Callable, base_url: String,
 		# saves for one game would otherwise be a dozen round trips.
 		var names: Dictionary = {}
 		for s: Dictionary in out["saves"]:
-			if str(s["file_name"]).get_extension().to_lower() != "mcs":
+			if str(s["file_name"]).get_extension().to_lower() != save_ext:
 				continue
 			var rid := int(s["rom_id"])
 			if not names.has(rid):
@@ -516,16 +519,17 @@ func _pump() -> void:
 ## exactly one game, and RetroXR knows which game wrote it: the caller attributes
 ## it at flush time rather than parsing the save's serial and looking it up.
 ##
-## `bytes` is the save's .mcs. Deliberately upload-only — see _worker_push_only.
+## `bytes` is the save lifted off the card, and `save_ext` names the format it is
+## in ("mcs", "gci"). Deliberately upload-only — see _worker_push_only.
 func push_card_save(key: String, rom_id: int, core_name: String, slot: String,
-					label: String, bytes: PackedByteArray) -> void:
+					label: String, bytes: PackedByteArray, save_ext := "mcs") -> void:
 	if config == null or not config.is_configured() or rom_id <= 0 or bytes.is_empty():
 		return
 	for j: Dictionary in _queue:
 		if str(j["key"]) == key:
 			return
 	_queue.append({
-		"key": key, "path": "", "bytes": bytes, "ext": "mcs",
+		"key": key, "path": "", "bytes": bytes, "ext": save_ext,
 		"rom_id": rom_id, "core": core_name, "slot": slot, "label": label,
 		"base_url": config.base_url, "headers": config.auth_headers(),
 		"record": (_state.get(key, {}) as Dictionary).duplicate(),

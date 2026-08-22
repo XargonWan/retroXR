@@ -292,7 +292,17 @@ var _disc_ejected := false
 ## is pushed home. Distinct from _snapped_cartridge, which means "the machine has
 ## this cart" — on such a bay the two are apart for as long as the tray is up.
 var _tray_cartridge: Node3D = null
-@onready var _memcard_slot: XRToolsSnapZone = $MemoryCardSlot
+## The card snap zones, in slot order. Named here rather than looked up through a
+## method because NetObjectSync resolves a slot by node name — its test double is
+## a bare node with named children and no methods of its own.
+##
+## Slot A keeps the original node name so a PlayStation, and every saved room and
+## replicated event that already refers to it, is untouched.
+const MEMCARD_SLOT_NODES := ["MemoryCardSlot", "MemoryCardSlot2"]
+
+@onready var _memcard_slots: Array[XRToolsSnapZone] = [
+	$MemoryCardSlot, $MemoryCardSlot2,
+]
 @onready var _cable_attach_point: Node3D = $CableAttachPoint
 @onready var _libretro: Libretro = $Libretro
 @onready var _power_button: VRButton = $PowerButton
@@ -381,8 +391,12 @@ func _ready() -> void:
 	dropped.connect(_on_system_dropped)
 	if ignore_gravity:   # restored from a save — float at the saved pose
 		_freeze_in_place.call_deferred()
-	_memcard_slot.has_picked_up.connect(_on_memcard_inserted)
-	_memcard_slot.has_dropped.connect(_on_memcard_removed)
+	for i in _memcard_slots.size():
+		_memcard_slots[i].snap_filter = _accepts_card
+		_memcard_slots[i].has_picked_up.connect(_on_memcard_inserted.bind(i))
+		# has_dropped carries no argument, so the slot has to be closed over.
+		_memcard_slots[i].has_dropped.connect(
+			func() -> void: _on_memcard_removed(i))
 	_power_button.button_pressed.connect(toggle_power)
 	_reset_button.button_pressed.connect(reset)
 	_eject_button.button_pressed.connect(_on_eject_pressed)
@@ -640,16 +654,24 @@ func _load_system_model() -> void:
 		var active := i < port_count
 		_port_zones[i].visible = active
 		_port_zones[i].enabled = active
-	# Memory-card slot only on CD-era hardware (PSX); cartridge systems keep
-	# their battery save on the cartridge itself.
-	var cards := _uses_memory_cards()
-	_memcard_slot.visible = cards
-	_memcard_slot.enabled = cards
-	var mouth := _system_body.get_node_or_null("MemCardMouth") as MeshInstance3D
-	if mouth != null:
-		mouth.visible = cards
-	if cards:
-		_model.configure_memory_card_slot(_memcard_slot)
+	# Memory-card slots only on hardware that takes them; cartridge systems keep
+	# their battery save on the cartridge itself. A PlayStation shows one, a
+	# GameCube or Wii two.
+	#
+	# The model is configured LAST and only for the slots that exist, because a
+	# shell may gate its slots behind a door — the Wii's are under the memory
+	# flap — and that gate has to win over this blanket enable.
+	var card_slots := _card_slot_count()
+	for i in _memcard_slots.size():
+		var active := i < card_slots
+		_memcard_slots[i].visible = active
+		_memcard_slots[i].enabled = active
+		var mouth := _system_body.get_node_or_null(
+			"MemCardMouth" if i == 0 else "MemCardMouth%d" % (i + 1)) as MeshInstance3D
+		if mouth != null:
+			mouth.visible = active
+		if active:
+			_model.configure_memory_card_slot(_memcard_slots[i], i)
 	# Disc loader: tray consoles (PS1/GameCube…) get an OPEN button gating a
 	# closed-by-default tray; slot loaders (PS2) get an always-open slot with
 	# an EJECT button. Cartridge systems hide the button entirely.
@@ -2761,17 +2783,18 @@ func _removable_media_options(core: String) -> Dictionary:
 	if not _uses_memory_cards() or not core.begins_with("pcsx_rearmed"):
 		return {}
 	return {
-		"pcsx_rearmed_memcard1": "libretro" if _snapped_memcard else "none",
-		# The cabinet has one card slot, so slot 2 is empty. Said out loud rather
-		# than left to the core's default, which is a shared card every game can
-		# see and no object in the room accounts for.
+		"pcsx_rearmed_memcard1": "libretro" if get_snapped_memcard(0) else "none",
+		# The PlayStation has one card slot here, so slot 2 is empty. Said out
+		# loud rather than left to the core's default, which is a shared card
+		# every game can see and no object in the room accounts for.
 		"pcsx_rearmed_memcard2": "none",
 		# And whether the card is actually IN it, which is a different question
 		# from what kind of card the slot holds and the only one that can change
 		# while the game runs. Set here too so a machine starts up agreeing with
 		# the room: the key is read at load like the others, and _set_card_presence
 		# keeps it honest from then on.
-		"pcsx_rearmed_memcard1_inserted": "enabled" if _snapped_memcard else "disabled",
+		"pcsx_rearmed_memcard1_inserted":
+			"enabled" if get_snapped_memcard(0) else "disabled",
 	}
 
 
@@ -3327,6 +3350,16 @@ func _accepts_plug(obj: Node3D) -> bool:
 	return _belongs_here(obj, _CONTROLLER_COMPAT)
 
 
+## Card gate: is this the family of card this console takes? Every card is in
+## one "memory_card" group — the group is load-bearing in scene persistence, the
+## netplay object sync and the card's own numbering — so the family is what
+## separates them, the same way a plug's systemid separates controllers.
+func _accepts_card(obj: Node3D) -> bool:
+	if obj == null or not ("family" in obj):
+		return false
+	return str(obj.get("family")) == _card_family()
+
+
 ## Returns the currently snapped cartridge, or null (used by save/load).
 func get_snapped_cartridge() -> Node3D:
 	return _snapped_cartridge
@@ -3817,13 +3850,19 @@ func net_set_tray_open(open: bool) -> void:
 
 # --- Memory card slot (CD-era consoles) ---
 
-## The MemoryCard currently seated, or null.
-var _snapped_memcard: Node3D = null
+## The MemoryCard seated in each slot, or null. Indexed by slot, in the order
+## MEMCARD_SLOT_NODES names them.
+var _snapped_memcards: Array[Node3D] = [null, null]
 
-## PS1 save filename -> md5 of its .mcs, as of the last time this console looked
-## at the seated card. Snapshotted at mount so the first flush can tell what this
-## game wrote from what was already on the card.
-var _card_save_hashes: Dictionary = {}
+## Per slot: save filename -> md5 of that save, as of the last time this console
+## looked at the card in it. Snapshotted at mount so the first flush can tell
+## what this game wrote from what was already on the card.
+##
+## Per SLOT and not one shared table, because the key is a save's own filename
+## and two cards can each hold a save of the same name. Sharing one would make
+## seating a second card look like every save on the first had just changed, and
+## hand them all to whichever game happened to be running.
+var _card_save_hashes: Array[Dictionary] = [{}, {}]
 
 # Netplay SRAM override (set by NetplaySession before net_start_core):
 # path "" on clients (no local persistence of someone else's game) and the
@@ -3834,12 +3873,22 @@ var _net_sram_data := PackedByteArray()
 var _net_no_content_override := false
 
 
-func get_snapped_memcard() -> Node3D:
-	return _snapped_memcard
+## The card in a slot, or null. Defaults to slot A, which is every caller that
+## predates the second slot and every one-slot console.
+func get_snapped_memcard(slot := 0) -> Node3D:
+	if slot < 0 or slot >= _snapped_memcards.size():
+		return null
+	return _snapped_memcards[slot]
 
 
-func _on_memcard_inserted(card: Node3D) -> void:
-	_snapped_memcard = card
+## How many card slots this console shows. Public so menu code can walk them
+## without knowing which console it is looking at.
+func get_memcard_slot_count() -> int:
+	return _card_slot_count()
+
+
+func _on_memcard_inserted(card: Node3D, slot: int) -> void:
+	_snapped_memcards[slot] = card
 	add_collision_exception_with(card)
 	if is_powered_on:
 		# Hot-swap: the C++ side flushes the old card and loads this one —
@@ -3847,29 +3896,31 @@ func _on_memcard_inserted(card: Node3D) -> void:
 		if NetworkManager.netplay_running() and NetworkManager.netplay_system() == self:
 			push_warning("[RetroSystem] memory card ignored during netplay")
 		else:
-			_libretro.SetSramPath(_sram_path_for_run(_resolve_core()))
-			_set_card_presence(true)
+			_remount_cards()
+			_set_card_presence(slot, true)
 	NetworkManager.report_event(NetObjectSync.EV_MEMCARD_INSERT,
-		{"sys": self, "card": card})
+		{"sys": self, "card": card, "slot": slot})
 
 
-func _on_memcard_removed() -> void:
-	if _snapped_memcard:
-		remove_collision_exception_with(_snapped_memcard)
-		_snapped_memcard = null
+func _on_memcard_removed(slot: int) -> void:
+	if _snapped_memcards[slot]:
+		remove_collision_exception_with(_snapped_memcards[slot])
+		_snapped_memcards[slot] = null
+	_card_save_hashes[slot] = {}
 	if is_powered_on:
 		if NetworkManager.netplay_running() and NetworkManager.netplay_system() == self:
 			push_warning("[RetroSystem] memory card removal ignored during netplay")
 		else:
 			# No card, no saving. The C++ side blanks SAVE_RAM to match, so
 			# nothing is written into the card the core keeps for itself.
-			_libretro.SetSramPath("")
+			_remount_cards()
 			# And the console is told the slot is EMPTY, which blanking SAVE_RAM
 			# cannot say on its own: a 128 KB buffer of zeroes is a card, merely
 			# an unformatted one, so the game offered to format it instead of
 			# reporting no card at all.
-			_set_card_presence(false)
-	NetworkManager.report_event(NetObjectSync.EV_MEMCARD_REMOVE, {"sys": self})
+			_set_card_presence(slot, false)
+	NetworkManager.report_event(NetObjectSync.EV_MEMCARD_REMOVE,
+		{"sys": self, "slot": slot})
 
 
 ## Tell the running console whether a card is in the slot.
@@ -3888,10 +3939,13 @@ func _on_memcard_removed() -> void:
 ## Older cores never registered the key, and the extension skips a key a core
 ## does not have, so this is a no-op against a build from before the option
 ## shipped rather than an error.
-func _set_card_presence(inserted: bool) -> void:
+## Only the PlayStation answers this. Its slot 2 is pinned to "none" and has no
+## presence key of its own, so a second slot has nothing to say here — which is
+## fine, because no console with two slots runs on pcsx_rearmed.
+func _set_card_presence(slot: int, inserted: bool) -> void:
 	if not is_powered_on or not _uses_memory_cards():
 		return
-	if not _resolve_core().begins_with("pcsx_rearmed"):
+	if slot != 0 or not _resolve_core().begins_with("pcsx_rearmed"):
 		return
 	# Through set_core_option rather than at the Libretro node, so the value the
 	# options panel shows and the value the core is running on cannot drift, and
@@ -3900,20 +3954,27 @@ func _set_card_presence(inserted: bool) -> void:
 		"enabled" if inserted else "disabled")
 
 
-## The seated card's image moved (it was renamed), so re-point the running core
-## at the new path. Without this the core keeps writing to the old name and the
-## next flush recreates it, making one card look like two.
-func refresh_memcard_path() -> void:
-	if not is_powered_on or _snapped_memcard == null:
+## A seated card's image moved (it was renamed), so re-point the running core at
+## the new path. Without this the core keeps writing to the old name and the next
+## flush recreates it, making one card look like two.
+##
+## `slot` is which one moved; -1 re-points every seated card, which is what a
+## caller holding only a card_id can ask for.
+func refresh_memcard_path(slot := -1) -> void:
+	if not is_powered_on:
+		return
+	if slot >= 0 and get_snapped_memcard(slot) == null:
 		return
 	if NetworkManager.netplay_running() and NetworkManager.netplay_system() == self:
 		return
-	_libretro.SetSramPath(_sram_path_for_run(_resolve_core()))
+	_remount_cards()
 
 
-## Restore a memory card into the slot after loading from a save file.
-func restore_memory_card(card: Node3D) -> void:
-	_memcard_slot.pick_up_object(card)
+## Restore a memory card into a slot after loading from a save file.
+func restore_memory_card(card: Node3D, slot := 0) -> void:
+	if slot < 0 or slot >= _memcard_slots.size():
+		return
+	_memcard_slots[slot].pick_up_object(card)
 
 
 # --- Battery saves (SRAM) ---
@@ -3934,7 +3995,9 @@ func _on_sram_flushed(path: String, _size: int, final: bool) -> void:
 	# against a card's path. Gating on it left a card only ever backed up by
 	# hand from the menu.
 	if _uses_memory_cards():
-		_sync_card_saves(path)
+		# Only single-slot hardware reaches here: SAVE_RAM is one buffer, so the
+		# path it flushed is slot A's by construction.
+		_sync_card_saves(CardFormats.for_path(path), 0, path)
 		return
 	if not SaveSync.is_enabled(path):
 		return
@@ -3957,20 +4020,23 @@ func _on_sram_flushed(path: String, _size: int, final: bool) -> void:
 ##
 ## Without that snapshot the first flush would look like every save on the card
 ## was new and hand another game's saves to this one.
-func _sync_card_saves(path: String) -> void:
-	if path.is_empty() or not SaveSync.is_available():
+## `slot` is the CARD slot this image came out of. The `slot` inside a save entry
+## is a different thing — RomM's name for one save — which is why the two are
+## kept apart by name below.
+func _sync_card_saves(fmt: CardFormat, slot: int, path: String) -> void:
+	if fmt == null or path.is_empty() or not SaveSync.is_available():
 		return
 	var rom_id := SaveSync.rom_id_for(_resolve_systemid(), rom_path)
 	if rom_id <= 0:
 		return
 	var core := _resolve_core()
 	var data := FileAccess.get_file_as_bytes(path)
-	for s: Dictionary in _changed_card_saves(data):
-		var slot := str(s["slot"])
+	for s: Dictionary in _changed_card_saves(fmt, slot, data):
+		var save_slot := str(s["slot"])
 		# Opt-in per SAVE, not per card: a card is shared between games, and
 		# sending one game's progress to a server should not decide it for every
 		# other game that later writes to the same card.
-		var key := RommSaveSync.card_save_key(path, slot)
+		var key := RommSaveSync.card_save_key(path, save_slot)
 		# Record the owner either way. This is the only moment it is knowable,
 		# and it is what lets the menu upload a save the moment it is opted in
 		# rather than waiting for this game to be played again.
@@ -3978,37 +4044,45 @@ func _sync_card_saves(path: String) -> void:
 		if not SaveSync.is_key_enabled(key):
 			continue
 		var title := str(s["title"])
-		SaveSync.push_card_save(key, rom_id, core, slot,
-			title if not title.is_empty() else slot, s["bytes"])
+		SaveSync.push_card_save(key, rom_id, core, save_slot,
+			title if not title.is_empty() else save_slot, s["bytes"],
+			fmt.save_extension())
 
 
-## Which saves on this card differ from the snapshot, as
+## Which saves on the card in this slot differ from its snapshot, as
 ## {slot, title, bytes}, updating the snapshot as it goes.
 ##
 ## Split out from the upload so the attribution rule can be tested without a
 ## server: everything this returns is claimed by whatever game is running.
-func _changed_card_saves(data: PackedByteArray) -> Array[Dictionary]:
+func _changed_card_saves(fmt: CardFormat, slot: int,
+		data: PackedByteArray) -> Array[Dictionary]:
 	var out: Array[Dictionary] = []
-	for s: Dictionary in PS1Card.list_saves(data, false):
-		var slot := str(s["name"])
-		var bytes := PS1Card.extract_save(data, int(s["block"]))
+	if fmt == null or slot < 0 or slot >= _card_save_hashes.size():
+		return out
+	var seen: Dictionary = _card_save_hashes[slot]
+	for s: Dictionary in fmt.list_saves(data, false):
+		var save_slot := str(s["name"])
+		var bytes := fmt.extract_save(data, int(s["block"]))
 		if bytes.is_empty():
 			continue
 		var digest := RommSaveSync.md5_of(bytes)
-		if str(_card_save_hashes.get(slot, "")) == digest:
+		if str(seen.get(save_slot, "")) == digest:
 			continue
-		_card_save_hashes[slot] = digest
-		out.append({"slot": slot, "title": str(s["title"]), "bytes": bytes})
+		seen[save_slot] = digest
+		out.append({"slot": save_slot, "title": str(s["title"]), "bytes": bytes})
 	return out
 
 
 ## Remember what was already on a card the moment it is mounted, so the first
 ## flush can tell this game's writes from saves that were there before it.
-func _snapshot_card_saves(path: String) -> void:
-	_card_save_hashes.clear()
+func _snapshot_card_saves(slot: int, path: String) -> void:
+	if slot < 0 or slot >= _card_save_hashes.size():
+		return
+	_card_save_hashes[slot] = {}
 	# Everything it finds counts as "already there", so the snapshot and the diff
 	# cannot disagree about how a save is hashed.
-	_changed_card_saves(FileAccess.get_file_as_bytes(path))
+	_changed_card_saves(CardFormats.for_path(path), slot,
+		FileAccess.get_file_as_bytes(path))
 
 
 ## Ask to track achievements for the game about to start. Silent on refusal —
@@ -4068,8 +4142,9 @@ func _machine_toast() -> AchievementToast:
 ## rather than a save, and one card holds a file per game.
 func _sram_slot() -> String:
 	if _uses_memory_cards():
-		if _snapped_memcard and "card_id" in _snapped_memcard:
-			return "card:%s" % str(_snapped_memcard.get("card_id"))
+		var card := get_snapped_memcard(0)
+		if card and "card_id" in card:
+			return "card:%s" % str(card.get("card_id"))
 		return ""
 	if _snapped_cartridge and "save_id" in _snapped_cartridge:
 		return str(_snapped_cartridge.get("save_id"))
@@ -4097,15 +4172,31 @@ func _resolve_systemid() -> String:
 ## PlayStation has a card slot whatever is in the drive, and the slot has to be
 ## configured before any media is loaded.
 ##
-## A bespoke shell can still opt in through its model; nothing does yet.
+## A bespoke shell can still overrule the descriptor through its model.
 func _uses_memory_cards() -> bool:
+	return _card_slot_count() > 0
+
+
+## How many card slots this console shows. The shell has the last word when it
+## has an opinion at all — see SystemModel.card_slot_count, where -1 means it has
+## none and 0 means it is asserting there are no slots.
+func _card_slot_count() -> int:
 	# Reachable from the options panel, which can ask before a model is loaded.
 	if _model == null:
-		return false
-	if _model.uses_memory_cards():
-		return true
+		return 0
+	var from_model: int = _model.card_slot_count()
+	if from_model >= 0:
+		return mini(from_model, MEMCARD_SLOT_NODES.size())
 	var info := SystemInfo.for_system(systemid)
-	return info != null and info.memory_cards
+	if info == null:
+		return 0
+	return mini(info.card_slots, MEMCARD_SLOT_NODES.size())
+
+
+## Which family of card this console takes, or "" when it takes none.
+func _card_family() -> String:
+	var info := SystemInfo.for_system(systemid)
+	return info.card_family if info != null else ""
 
 
 ## Where this run's save image lives, or "" when nothing backs it. Pure — see
@@ -4117,13 +4208,14 @@ func _uses_memory_cards() -> bool:
 ##
 ## Cartridge systems resolve to the cart's own save_id file — each physical cart
 ## holds its own save.
-func _compose_sram_path(resolved_core: String) -> String:
+func _compose_sram_path(resolved_core: String, slot := 0) -> String:
 	if resolved_core.is_empty() or rom_path.is_empty():
 		return ""
 	if _uses_memory_cards():
-		if _snapped_memcard and "card_id" in _snapped_memcard:
-			return SramPaths.card_save_path(systemid,
-				str(_snapped_memcard.get("card_id")))
+		var card := get_snapped_memcard(slot)
+		if card and "card_id" in card:
+			return SramPaths.card_save_path(_card_family(),
+				str(card.get("card_id")))
 		return ""
 	if _snapped_cartridge and "save_id" in _snapped_cartridge:
 		return SramPaths.cart_save_path(resolved_core, rom_path,
@@ -4131,32 +4223,79 @@ func _compose_sram_path(resolved_core: String) -> String:
 	return ""
 
 
-## The path to hand the core for a run that is about to start, formatting a
-## brand-new card on the way. Also tells the core that empty means "nothing
-## plugged in" rather than "don't save": pcsx_rearmed otherwise presents a fully
-## formatted card of its own, which a game would write to and lose at power-off.
+## The image backing one card slot for a run that is about to start, formatting a
+## brand-new card on the way. "" when nothing backs it.
+func _card_path_for_run(resolved_core: String, slot: int) -> String:
+	var path := _compose_sram_path(resolved_core, slot)
+	var card := get_snapped_memcard(slot)
+	if path.is_empty() or card == null:
+		_card_save_hashes[slot] = {}
+		return ""
+	var card_id := str(card.get("card_id"))
+	# Only a card this session invented may have its image created. One that came
+	# from a saved room or the shelf is supposed to have an image already; if it
+	# has gone — renamed away, or deleted outside the app — writing a blank would
+	# look exactly like the saves were wiped, and the next flush would make that
+	# permanent. Run with nothing backing it instead, which the core reports as
+	# unformatted media, and leave the player somewhere to recover from.
+	var family := _card_family()
+	if SramPaths.find_card(card_id, family).is_empty() \
+			and not bool(card.get("minted")):
+		push_warning("[RetroSystem] memory card '%s' has no image on disk — "
+			% card_id + "running without it rather than creating a blank")
+		_card_save_hashes[slot] = {}
+		return ""
+	path = SramPaths.ensure_card(family, card_id)
+	_snapshot_card_saves(slot, path)
+	return path
+
+
+## The path to hand the core for a run that is about to start. Also tells the
+## core that empty means "nothing plugged in" rather than "don't save":
+## pcsx_rearmed otherwise presents a fully formatted card of its own, which a
+## game would write to and lose at power-off.
+##
+## Single-slot hardware backs its card through SAVE_RAM, so this returns slot A's
+## path for the caller to hand to SetSramPath, exactly as it always did.
+##
+## Multi-slot hardware does not, and this is where the two part company. Dolphin
+## exposes no SAVE_RAM at all — it owns its card files — so every seated card is
+## mounted here through the core's own per-slot option and this returns "", which
+## is already how this function says "nothing goes through SAVE_RAM".
 func _sram_path_for_run(resolved_core: String) -> String:
 	var cards := _uses_memory_cards()
 	_libretro.SetRemovableStorage(cards)
-	var path := _compose_sram_path(resolved_core)
-	if cards and not path.is_empty() and _snapped_memcard:
-		var card_id := str(_snapped_memcard.get("card_id"))
-		# Only a card this session invented may have its image created. One that
-		# came from a saved room or the shelf is supposed to have an image
-		# already; if it has gone — renamed away, or deleted outside the app —
-		# writing a blank would look exactly like the saves were wiped, and the
-		# next flush would make that permanent. Run with nothing backing it
-		# instead, which the core reports as unformatted media, and leave the
-		# player somewhere to recover from.
-		var existing := SramPaths.find_card(card_id)
-		if existing.is_empty() and not bool(_snapped_memcard.get("minted")):
-			push_warning("[RetroSystem] memory card '%s' has no image on disk — "
-				% card_id + "running without it rather than creating a blank")
-			_card_save_hashes.clear()
-			return ""
-		path = SramPaths.ensure_card(systemid, card_id)
-		_snapshot_card_saves(path)
-	return path
+	if not cards:
+		return _compose_sram_path(resolved_core)
+	var paths: Array[String] = []
+	for slot in _card_slot_count():
+		paths.append(_card_path_for_run(resolved_core, slot))
+	if _card_slot_count() <= 1:
+		return paths[0] if not paths.is_empty() else ""
+	_mount_core_cards(resolved_core, paths)
+	return ""
+
+
+## Hand a multi-slot core its card files. Only Dolphin has any, and its option
+## takes a verbatim absolute path, or "none" for a slot with no card in it —
+## which must be a genuinely absent card and not a blank one, so a game says
+## "no memory card" rather than offering to format something.
+func _mount_core_cards(resolved_core: String, paths: Array[String]) -> void:
+	if not resolved_core.begins_with("dolphin"):
+		return
+	const KEYS := ["dolphin_memcard_a_path", "dolphin_memcard_b_path"]
+	for slot in KEYS.size():
+		var path := paths[slot] if slot < paths.size() else ""
+		set_core_option(KEYS[slot], path if not path.is_empty() else "none")
+
+
+## Re-resolve every card slot and re-point the running core at the result. The
+## one path a card being seated, pulled or renamed goes through, so the two
+## families cannot drift apart over what a swap means.
+func _remount_cards() -> void:
+	var path := _sram_path_for_run(_resolve_core())
+	if _card_slot_count() <= 1:
+		_libretro.SetSramPath(path)
 
 
 ## Netplay: override the SRAM source for the next net_start_core (see

@@ -71,6 +71,10 @@ var backed_up_slots: Dictionary = {}
 ## they work — a card being played is the case that matters.
 var actions_blocked := ""
 
+## The family the current listing came from, for the words the rows use. Set by
+## populate(); null only before the first one.
+var _fmt: CardFormat = null
+
 var _list: VBoxContainer = null
 var _scroll: ScrollContainer = null
 var _name_edit: LineEdit = null
@@ -88,11 +92,16 @@ func _ready() -> void:
 	_build_ui()
 
 
+## What one unit of card space is called on the family currently listed.
+func _unit() -> String:
+	return _fmt.unit_noun() if _fmt != null else "block"
+
+
 func _process(delta: float) -> void:
 	if _animated.is_empty():
 		return
 	_clock += delta
-	var f := int(_clock * ICON_FPS)
+	var f := int(_clock * (_fmt.icon_fps() if _fmt != null else ICON_FPS))
 	# 6 Hz of animation does not need 120 Hz of texture assignment; each one
 	# dirties the panel and forces its viewport to redraw.
 	if f == _frame:
@@ -186,14 +195,22 @@ func _build_ui() -> void:
 	vbox.add_child(_restore_btn)
 
 
-## Fill from a parsed card. `saves` is PS1Card.list_saves() output.
-func populate(card_name: String, saves: Array, free: int) -> void:
+## Fill from a parsed card. `saves` is CardFormat.list_saves() output; `total` is
+## how many units this card holds and `free` how many are left.
+##
+## `fmt` is required rather than defaulted. A default would quietly print a
+## PlayStation's fifteen blocks under a GameCube card, and `total` is passed in
+## rather than derived because only a card's own image knows its size — a
+## GameCube 59 and a 251 are both ordinary.
+func populate(card_name: String, saves: Array, free: int, total: int,
+		fmt: CardFormat) -> void:
 	_name_edit.text = card_name
 	_clear_list()
+	_fmt = fmt
 
-	var used := 15 - free
-	_usage.text = "%d of 15 blocks used   ·   %d save%s" \
-		% [used, saves.size(), "" if saves.size() == 1 else "s"]
+	_usage.text = "%d of %d %ss used   ·   %d save%s" \
+		% [maxi(total - free, 0), total, fmt.unit_noun(),
+			saves.size(), "" if saves.size() == 1 else "s"]
 	# A card being played must not be edited, and restoring into it is an edit.
 	_restore_btn.visible = show_restore_action and sync_available \
 		and actions_blocked.is_empty() and not missing
@@ -289,7 +306,7 @@ func _restore_row(s: Dictionary) -> Control:
 
 	var blocks: int = int(s.get("blocks", 1))
 	var sub := Label.new()
-	sub.text = "%d block%s%s" % [blocks, "" if blocks == 1 else "s",
+	sub.text = "%d %s%s%s" % [blocks, _unit(), "" if blocks == 1 else "s",
 		"" if reason.is_empty() else "   ·   " + reason]
 	sub.add_theme_font_size_override("font_size", 15)
 	sub.add_theme_color_override("font_color", COLOR_DIM)
@@ -357,8 +374,9 @@ func _make_row(s: Dictionary) -> Control:
 
 	var sub := Label.new()
 	var blocks: int = int(s.get("blocks", 1))
-	sub.text = "%s   ·   %d block%s" \
-		% [str(s.get("serial", "")), blocks, "" if blocks == 1 else "s"]
+	sub.text = "%s   ·   %d %s%s" \
+		% [str(s.get("serial", "")), blocks, _unit(),
+			"" if blocks == 1 else "s"]
 	sub.add_theme_font_size_override("font_size", 15)
 	sub.add_theme_color_override("font_color", COLOR_DIM)
 	col.add_child(sub)

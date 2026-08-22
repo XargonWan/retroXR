@@ -1,0 +1,87 @@
+[gd_scene load_steps=9 format=3 uid="uid://gc_memory_card_001"]
+
+[ext_resource type="Script" path="res://Scripts/Objects/media/memory_card.gd" id="1_memcardscript"]
+[ext_resource type="Script" path="res://Scripts/Objects/highlights/pickable_highlight.gd" id="2_pickhigh"]
+
+; 43 x 6 x 51 mm — a Nintendo GameCube Memory Card (DOL-014). Squatter and
+; thinner than the PlayStation's 42 x 8 x 63.5, which is the difference you can
+; see with the two side by side.
+;
+; Same axis convention as the PlayStation card: the LONG axis is Z, the way the
+; card goes into the slot. A GameCube card enters on its 43 mm edge and its
+; 51 mm length points out of the machine at you.
+[sub_resource type="BoxShape3D" id="BoxShape3D_card"]
+size = Vector3(0.043, 0.006, 0.051)
+
+; The LOOSE pointer target: the card plus 10 mm on every face, so a small flat
+; object is still findable on a shelf. memory_card.gd swaps this for a box the
+; size of the card itself while a console is holding it.
+[sub_resource type="BoxShape3D" id="BoxShape3D_pointer"]
+size = Vector3(0.063, 0.026, 0.071)
+
+[sub_resource type="BoxMesh" id="BoxMesh_card"]
+size = Vector3(0.043, 0.006, 0.051)
+
+; Nintendo's own cards were near-black; the grey PlayStation card beside it is
+; what makes the two tell apart at a glance in the room.
+[sub_resource type="StandardMaterial3D" id="Mat_card"]
+albedo_color = Color(0.16, 0.17, 0.19, 1.0)
+
+; The dark band across the connector end. Sized to the card's 43 mm width.
+[sub_resource type="BoxMesh" id="BoxMesh_stripe"]
+size = Vector3(0.032, 0.0015, 0.007)
+
+[sub_resource type="StandardMaterial3D" id="Mat_stripe"]
+albedo_color = Color(0.08, 0.08, 0.09, 1.0)
+
+[sub_resource type="PhysicsMaterial" id="PhysMat_card"]
+bounce = 0.0
+friction = 0.8
+
+[node name="MemoryCard" type="RigidBody3D" groups=["memory_card"]]
+collision_layer = 4
+collision_mask = 196613
+physics_material_override = SubResource("PhysMat_card")
+linear_damp = 5.0
+angular_damp = 8.0
+freeze_mode = 1
+script = ExtResource("1_memcardscript")
+family = "gamecube"
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="."]
+shape = SubResource("BoxShape3D_card")
+
+[node name="CardMesh" type="MeshInstance3D" parent="."]
+mesh = SubResource("BoxMesh_card")
+surface_material_override/0 = SubResource("Mat_card")
+
+[node name="StripeMesh" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.0035, -0.0215)
+mesh = SubResource("BoxMesh_stripe")
+surface_material_override/0 = SubResource("Mat_stripe")
+
+; Toward the OUTER end, like the printed plate on a real card — and so a seated
+; card's name is still readable with part of its length inside the console.
+; 37 mm wide (124 px at this pixel_size) to sit inside the 43 mm face.
+[node name="CardLabel" type="Label3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 0, 1, 0, -1, 0, 0, 0.0035, 0.011)
+modulate = Color(0.85, 0.85, 0.85, 1)
+text = "MEMORY CARD"
+pixel_size = 0.0003
+font_size = 16
+outline_size = 0
+horizontal_alignment = 1
+vertical_alignment = 1
+autowrap_mode = 3
+max_lines_visible = 2
+width = 124.0
+
+[node name="PickableHighlight" type="Node3D" parent="."]
+script = ExtResource("2_pickhigh")
+
+[node name="PointerArea" type="StaticBody3D" parent="."]
+collision_layer = 1048576
+collision_mask = 0
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="PointerArea"]
+shape = SubResource("BoxShape3D_pointer")

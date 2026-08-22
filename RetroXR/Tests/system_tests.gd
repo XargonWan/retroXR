@@ -1198,12 +1198,17 @@ func _test_memcard_presence() -> void:
 		empty.get("pcsx_rearmed_memcard1", ""), "none")
 	_eq("memcard/and reported empty",
 		empty.get("pcsx_rearmed_memcard1_inserted", ""), "disabled")
-	_eq("memcard/the cabinet's second slot is always absent",
+	_eq("memcard/the PlayStation's second slot is always absent",
 		empty.get("pcsx_rearmed_memcard2", ""), "none")
+	# A PlayStation shows ONE slot, whatever the cabinet has room for. The second
+	# zone exists in the scene for the consoles that take two, and must stay shut
+	# on this one.
+	_eq("memcard/a PlayStation has one slot", psx._card_slot_count(), 1)
+	_eq("memcard/of the PlayStation family", psx._card_family(), "playstation")
 
 	# A card seated before the machine starts.
 	var card := Node3D.new()
-	psx._snapped_memcard = card
+	psx._snapped_memcards[0] = card
 	var seated := psx._removable_media_options("pcsx_rearmed")
 	_eq("memcard/a seated card types the slot",
 		seated.get("pcsx_rearmed_memcard1", ""), "libretro")
@@ -1223,7 +1228,7 @@ func _test_memcard_presence() -> void:
 	# The runtime half. It reaches for the live core, so on a machine that is not
 	# running it must do nothing at all rather than fault -- which is also what
 	# guards the case where the option arrives before a core exists to take it.
-	psx._set_card_presence(false)
+	psx._set_card_presence(0, false)
 	_ok("memcard/presence on a machine that is off does nothing",
 		not psx.is_powered_on)
 

@@ -199,7 +199,7 @@ class MockEventObject extends Node3D:
 
 	func _init() -> void:
 		for slot_name: String in ["CartridgeSlot", "TapeSlot", "ControllerPort1",
-				"MemoryCardSlot", "DiscSlot", "MediaSlot"]:
+				"MemoryCardSlot", "MemoryCardSlot2", "DiscSlot", "MediaSlot"]:
 			var slot := MockSlot.new()
 			slot.name = slot_name
 			add_child(slot)
@@ -212,7 +212,9 @@ class MockEventObject extends Node3D:
 		applying_seen = sync != null and sync.is_applying()
 	func restore_cartridge(obj: Node) -> void: restored["cart"] = obj
 	func restore_tape(obj: Node) -> void: restored["tape"] = obj
-	func restore_memory_card(obj: Node) -> void: restored["card"] = obj
+	func restore_memory_card(obj: Node, slot := 0) -> void:
+		restored["card"] = obj
+		restored["card_slot"] = slot
 	func restore_disc(obj: Node) -> void: restored["disc"] = obj
 	func restore_media(obj: Node) -> void: restored["media"] = obj
 	func restore_cable_connection(tv: Node, channel := -1, input := -1) -> void:

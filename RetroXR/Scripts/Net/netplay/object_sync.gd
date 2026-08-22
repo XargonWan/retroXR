@@ -51,8 +51,8 @@ enum {
 	EV_BOOK_PAGE,        # {book, state, leaf}  page turned -> everyone follows
 	EV_BOOK_SIZE,        # {book, scale}        size slider committed
 	EV_BOOK_HALF,        # {book, on}           half-page mode toggled
-	EV_MEMCARD_INSERT,   # {sys, card}
-	EV_MEMCARD_REMOVE,   # {sys}
+	EV_MEMCARD_INSERT,   # {sys, card, slot}
+	EV_MEMCARD_REMOVE,   # {sys, slot}
 	EV_TRAY,             # {sys, open}   disc tray lid opened/closed
 	EV_DISK_OP,          # {sys, op, md5, index}  client disc-swap intent -> host schedules
 	EV_DVD_INSERT,       # {dvd, disc}
@@ -1044,10 +1044,16 @@ func _apply_event(kind: int, wire: Dictionary) -> void:
 				a["book"].set("half_page_mode", bool(a.get("on", false)))
 		EV_MEMCARD_INSERT:
 			if _valid(a, ["sys", "card"]):
-				a["sys"].restore_memory_card(a["card"])
+				a["sys"].restore_memory_card(a["card"], _memcard_slot_of(a))
 		EV_MEMCARD_REMOVE:
 			if _valid(a, ["sys"]):
-				a["sys"].get_node("MemoryCardSlot").drop_object()
+				# By NODE NAME rather than through a method: this also runs
+				# against the test double, which is a bare node with named
+				# children and no console API of its own.
+				var zone: Node = a["sys"].get_node_or_null(
+					RetroSystem.MEMCARD_SLOT_NODES[_memcard_slot_of(a)])
+				if zone != null:
+					zone.drop_object()
 		EV_TRAY:
 			if _valid(a, ["sys"]) and a["sys"].has_method("net_set_tray_open"):
 				a["sys"].net_set_tray_open(bool(a.get("open", false)))
@@ -1110,6 +1116,13 @@ func _apply_event(kind: int, wire: Dictionary) -> void:
 					"next": ap.remote_next()
 					"prev": ap.remote_prev()
 	_applying = false
+
+
+## Which card slot a memcard event names, clamped to slots that exist. Defaults
+## to slot A so an event from a peer that predates two-slot consoles still lands
+## on the slot it meant.
+func _memcard_slot_of(a: Dictionary) -> int:
+	return clampi(int(a.get("slot", 0)), 0, RetroSystem.MEMCARD_SLOT_NODES.size() - 1)
 
 
 func _valid(a: Dictionary, keys: Array) -> bool:

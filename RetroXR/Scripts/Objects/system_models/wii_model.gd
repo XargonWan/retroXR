@@ -57,6 +57,8 @@ var _sd_hinge: VRHinge = null
 var _port_zones: Array = []
 var _ctrl_hinge: VRHinge = null
 var _mem_hinge: VRHinge = null
+## The card snap zones RetroSystem handed us, gated by the memory flap.
+var _mem_zones: Array = []
 var _ctrl_open := false
 var _mem_open := false
 var _sync_btn: VRButton = null
@@ -421,9 +423,46 @@ func _on_mem_flap_moved(deg: float) -> void:
 	if open == _mem_open:
 		return
 	_mem_open = open
+	_apply_mem_gate()
+
+
+## Two GameCube card slots, in the bay under the memory flap.
+func card_slot_count() -> int:
+	return 2
+
+
+## Seat one card zone on the MemSlot mesh that draws it, and shut it again if the
+## flap is closed.
+##
+## The gate is re-applied here rather than only from the hinge because
+## RetroSystem enables every slot it is showing a moment before calling this, and
+## the door starts shut — without it a card could be pushed into a closed machine
+## on the first frame.
+func configure_memory_card_slot(slot: Node3D, index: int) -> void:
+	var anchor := get_node_or_null("Top/MemGroup/MemSlot%d" % (index + 1)) as Node3D
+	if anchor == null or slot == null:
+		return
+	slot.global_transform = anchor.global_transform
+	if not _mem_zones.has(slot):
+		_mem_zones.append(slot)
+	_apply_mem_gate.call_deferred()
+
+
+## The Wii keeps its GameCube card slots under a door, so a card can only go in
+## when the door is open.
+##
+## `enabled` as well as `visible`, for the same reason _apply_ctrl_gate sets
+## both: a snap zone that has merely stopped drawing goes on catching what is
+## dropped near it, so a card would vanish into a shut machine.
+func _apply_mem_gate() -> void:
 	var grp := get_node_or_null("Top/MemGroup") as Node3D
 	if grp != null:
-		grp.visible = open
+		grp.visible = _mem_open
+	for z in _mem_zones:
+		var zone := z as Node3D
+		if zone != null and is_instance_valid(zone):
+			zone.set("enabled", _mem_open)
+			zone.visible = _mem_open
 
 
 # --- printed legends ---------------------------------------------------------

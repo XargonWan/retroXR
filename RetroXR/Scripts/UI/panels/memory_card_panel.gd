@@ -103,7 +103,13 @@ func _notice(text: String, seconds := MenuToasts.DWELL_OK) -> void:
 func _path() -> String:
 	if not (_card and is_instance_valid(_card)):
 		return ""
-	return SramPaths.find_card(_card.card_id)
+	return SramPaths.find_card(_card.card_id, _card.family)
+
+
+## The format this card is in. Never null for a card in the room — a MemoryCard
+## always carries a family — but menu code checks anyway.
+func _fmt() -> CardFormat:
+	return CardFormats.for_family(_card.family) if _card else null
 
 
 func _populate() -> void:
@@ -116,13 +122,19 @@ func _populate() -> void:
 
 	# A card that has never been in a powered console has no image yet. That is
 	# not an error — it is a blank card, and saying so beats an empty panel.
+	var fmt := _fmt()
+	if fmt == null:
+		return
 	var saves: Array[Dictionary] = []
-	var free := 15
+	var blank := PackedByteArray()
+	var total := fmt.total_blocks(blank)
+	var free := total
 	var path := _path()
 	if not path.is_empty():
 		var data := FileAccess.get_file_as_bytes(path)
-		saves = PS1Card.list_saves(data)
-		free = PS1Card.free_blocks(data)
+		saves = fmt.list_saves(data)
+		free = fmt.free_blocks(data)
+		total = fmt.total_blocks(data)
 	# A card with no image yet cannot be opted in — there is nothing to back up,
 	# and the path it would be keyed by does not exist.
 	#
@@ -141,7 +153,7 @@ func _populate() -> void:
 	ui.backed_up_slots = CardSaveOps.backed_up_slots(path, saves) if not path.is_empty() else {}
 	ui.armed_slot = _armed_slot
 	ui.actions_blocked = CardSaveOps.in_use_reason(get_tree(), _card.card_id)
-	ui.populate(_card.card_label, saves, free)
+	ui.populate(_card.card_label, saves, free, total, fmt)
 
 
 ## Delete one save, armed on the first press and done on the second, because
@@ -167,7 +179,7 @@ func _on_delete_requested(s: Dictionary) -> void:
 	_armed_slot = ""
 	var path := _path()
 	if path.is_empty() or not CardSaveOps.delete_save(
-			get_tree(), path, _card.card_id, int(s["block"])):
+			get_tree(), _fmt(), path, _card.card_id, int(s["block"])):
 		_notice("Could not delete %s" % CardSaveOps.title_of(s), MenuToasts.DWELL_FAIL)
 		_populate()
 		return
@@ -188,7 +200,7 @@ func _on_sync_toggled(s: Dictionary, on: bool) -> void:
 		_populate()
 		return
 	_notice("Uploading %s…" % CardSaveOps.title_of(s), 8.0)
-	CardSaveOps.backup_save(path, s, func(ok: bool, message: String) -> void:
+	CardSaveOps.backup_save(_fmt(), path, s, func(ok: bool, message: String) -> void:
 		if not (is_instance_valid(self) and visible):
 			return
 		_notice(message, MenuToasts.DWELL_OK if ok else MenuToasts.DWELL_FAIL)
@@ -201,7 +213,8 @@ func _on_restore_requested() -> void:
 	if ui == null:
 		return
 	ui.show_restore([], "Asking RomM…")
-	SaveSync.list_card_saves(CardSaveOps.SYSTEMID, func(ok: bool, saves: Array) -> void:
+	SaveSync.list_card_saves(_fmt().id(), _fmt().save_extension(),
+			func(ok: bool, saves: Array) -> void:
 		if not (is_instance_valid(self) and visible and is_instance_valid(ui)):
 			return
 		if not ok:
@@ -211,18 +224,19 @@ func _on_restore_requested() -> void:
 			ui.show_restore([], "RomM holds no memory-card saves yet.")
 			return
 
-		# A card with no image yet has all 15 blocks and nothing on it, which is
-		# exactly what a blank one it has not been given yet would report.
+		# A card with no image yet is empty with everything free, which is exactly
+		# what the blank it has not been given yet would report.
+		var fmt := _fmt()
 		var path := _path()
 		var data := FileAccess.get_file_as_bytes(path) if not path.is_empty() \
-			else PS1Card.blank_image()
-		var free := PS1Card.free_blocks(data)
-		var present := CardSaveOps.present_slots(data)
+			else fmt.blank_image()
+		var free := fmt.free_blocks(data)
+		var present := CardSaveOps.present_slots(fmt, data)
 		var rows: Array = []
 		for s: Dictionary in saves:
 			var row := s.duplicate()
-			row["blocks"] = CardSaveOps.blocks_of(s)
-			row["reason"] = CardSaveOps.restore_blocker(s, present, free)
+			row["blocks"] = CardSaveOps.blocks_of(fmt, s)
+			row["reason"] = CardSaveOps.restore_blocker(fmt, s, present, free)
 			rows.append(row)
 		ui.show_restore(rows, ""))
 
@@ -240,9 +254,9 @@ func _on_restore_picked(s: Dictionary) -> void:
 			_notice("This card's image is missing — nothing was written",
 				MenuToasts.DWELL_FAIL)
 			return
-		path = SramPaths.ensure_card(CardSaveOps.SYSTEMID, _card.card_id)
+		path = SramPaths.ensure_card(_card.family, _card.card_id)
 	_notice("Downloading %s…" % str(s.get("rom_name", s.get("slot", ""))), 8.0)
-	CardSaveOps.restore_save(get_tree(), path, _card.card_id, s,
+	CardSaveOps.restore_save(get_tree(), _fmt(), path, _card.card_id, s,
 		func(problem: String) -> void:
 			if not (is_instance_valid(self) and visible):
 				return

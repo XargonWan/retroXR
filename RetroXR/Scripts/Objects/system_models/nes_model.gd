@@ -667,8 +667,8 @@ func get_controller_port_count() -> int:
 	return 2
 
 
-func uses_memory_cards() -> bool:
-	return false
+func card_slot_count() -> int:
+	return 0
 
 
 ## POWER latches down and stays in; RESET is momentary. This shell ships no

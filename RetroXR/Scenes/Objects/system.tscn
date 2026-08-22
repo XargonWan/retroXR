@@ -122,6 +122,14 @@ visible = false
 mesh = SubResource("BoxMesh_memcard_recess")
 surface_material_override/0 = SubResource("Mat_cart_recess")
 
+; Slot B, above controller port 2. Only consoles with two slots show it — a
+; PlayStation has one and leaves this hidden, which is what card_slots says.
+[node name="MemCardMouth2" type="MeshInstance3D" parent="SystemBody" unique_id=1806706227]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.03, 0.038, 0.12)
+visible = false
+mesh = SubResource("BoxMesh_memcard_recess")
+surface_material_override/0 = SubResource("Mat_cart_recess")
+
 [node name="PickableHighlight" type="Node3D" parent="." unique_id=1748385500]
 script = ExtResource("5_pickhigh")
 
@@ -138,6 +146,13 @@ snap_require = "cartridge"
 ; seat moved back to keep the tab the same rather than hanging it out further.
 [node name="MemoryCardSlot" parent="." unique_id=-294967294 instance=ExtResource("2_snapzone")]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.09, 0.038, 0.1233)
+grab_distance = 0.05
+snap_require = "memory_card"
+
+; Slot B, beside slot A above controller port 2 — the GameCube's two card slots
+; sit side by side. A one-slot console hides and disables this one.
+[node name="MemoryCardSlot2" parent="." unique_id=-294967293 instance=ExtResource("2_snapzone")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.03, 0.038, 0.1233)
 grab_distance = 0.05
 snap_require = "memory_card"
 

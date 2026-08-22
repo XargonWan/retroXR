@@ -40,6 +40,7 @@ const SENSOR_BAR_SCENE      := preload("res://Scenes/Objects/system_models/wii/s
 const RF_SWITCH_SCENE       := preload("res://Scenes/Objects/appliances/rf_switch.tscn")
 const VCR_SCENE             := preload("res://Scenes/Objects/appliances/vcr_player.tscn")
 const MEMCARD_SCENE         := preload("res://Scenes/Objects/media/memory_card.tscn")
+const GC_MEMCARD_SCENE      := preload("res://Scenes/Objects/media/gc_memory_card.tscn")
 const TAPE_SCENE            := preload("res://Scenes/Objects/media/vcr_tape.tscn")
 const TV_REMOTE_SCENE       := preload("res://Scenes/Objects/appliances/tv_remote.tscn")
 const DVD_PLAYER_SCENE      := preload("res://Scenes/Objects/appliances/dvd_player.tscn")
@@ -855,6 +856,16 @@ func _give_to_grabber(grabber: Node, obj: XRToolsPickable) -> void:
 		grabber.grab_spawned(obj)
 
 
+## The physical card object for a family. Each family's card is a different
+## shape, so each has its own scene; an unknown family falls back to the
+## PlayStation's, because a card that will not spawn at all is worse than one
+## that looks wrong.
+func _card_scene_for(family: String) -> PackedScene:
+	match family:
+		"gamecube": return GC_MEMCARD_SCENE
+		_:          return MEMCARD_SCENE
+
+
 ## Add obj to the scene, place it 0.5 m in front of the menu, then hand it to
 ## whichever hand clicked the spawn button. A full hand
 ## blocks the spawn ("Drop Item From Hand First" in the menu's status bar).
@@ -1001,15 +1012,30 @@ func _on_spawn_requested(type: String) -> void:
 		sys.model_id = model_id
 		_place_spawned(sys, type)
 		return
-	# "memcard:<card_id>" — bring an EXISTING card back into the room rather than
-	# minting a blank one. The id is the card's filename, so the object lands
-	# already pointing at the saves it left behind. Same reason as the model token
-	# above: `match` is literal equality and would never catch a prefix.
+	# "memcard:<family>:<card_id>" — bring an EXISTING card back into the room
+	# rather than minting a blank one. The id is the card's filename, so the
+	# object lands already pointing at the saves it left behind. Same reason as
+	# the model token above: `match` is literal equality and never catches a
+	# prefix.
+	#
+	# Splitting on the FIRST colon only: sanitize_card_name strips colons from a
+	# card's name, so the family cannot contain one and the id cannot either.
 	if type.begins_with("memcard:"):
-		var card := MEMCARD_SCENE.instantiate() as MemoryCard
-		card.card_id = type.substr("memcard:".length())
+		var rest := type.substr("memcard:".length())
+		var sep := rest.find(":")
+		var family := rest.substr(0, sep) if sep >= 0 else "playstation"
+		var card := _card_scene_for(family).instantiate() as MemoryCard
+		card.family = family
+		card.card_id = rest.substr(sep + 1) if sep >= 0 else rest
 		card.card_label = card.card_id
-		_place_spawned(card, "memory_card")
+		_place_spawned(card, "%s_memory_card" % family)
+		return
+	# "<family>_memory_card" — a new blank card of that family.
+	if type.ends_with("_memory_card"):
+		var family := type.substr(0, type.length() - "_memory_card".length())
+		var card := _card_scene_for(family).instantiate() as MemoryCard
+		card.family = family
+		_place_spawned(card, type)
 		return
 	# "pad_receiver:<guid>:<ordinal>" — a receiver for one physical gamepad.
 	# The pad is set BEFORE _place_spawned for the same reason the set's shell is:

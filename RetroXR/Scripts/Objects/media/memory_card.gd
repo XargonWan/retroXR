@@ -1,11 +1,11 @@
-## MemoryCard — pickable memory card for CD-based consoles (PlayStation).
-## Must be in the "memory_card" group to snap into a RetroSystem's
-## MemoryCardSlot (only visible on consoles whose model uses_memory_cards()).
+## MemoryCard — pickable memory card for the consoles that take one.
+## Must be in the "memory_card" group to snap into a RetroSystem's card slots
+## (shown on consoles whose descriptor declares card_slots).
 ##
-## A card IS one 128 KB image, at save/memcards/<systemid>/<card_id>.mcr — the
-## same file every game played with this card seated writes into, which is what
-## lets a game read the saves other games left behind. No card in the slot means
-## nothing persists at all.
+## A card IS one image, at save/memcards/<family>/<card_id>.<ext> — the same file
+## every game played with this card seated writes into, which is what lets a game
+## read the saves other games left behind. No card in the slot means nothing
+## persists at all.
 class_name MemoryCard
 extends XRToolsPickable
 
@@ -16,8 +16,16 @@ var _options_panel: MemoryCardPanel = null
 var _loose_pointer_box := Vector3.ZERO
 
 
+## Which console family's card this is: the folder its image lives in and the
+## byte format that image is in. A console only accepts a card of the family it
+## takes, so a GameCube card will not go into a PlayStation.
+##
+## Defaults to the PlayStation, which is what every card authored or saved before
+## there was a second family is — so nothing needs migrating.
+@export var family: String = "playstation"
+
 ## Persistent identity, and literally the file name this card's saves live in
-## (`<card_id>.mcr`). Derived from card_label, so renaming a card moves its
+## (`<card_id>.<ext>`). Derived from card_label, so renaming a card moves its
 ## image — see MemoryCardPanel, which is the only thing that should change it.
 @export var card_id: String = ""
 

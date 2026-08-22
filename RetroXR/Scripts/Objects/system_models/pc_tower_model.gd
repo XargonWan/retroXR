@@ -171,8 +171,8 @@ func game_port_index() -> int:
 
 
 ## Saves live on the hard disk, not a removable card.
-func uses_memory_cards() -> bool:
-	return false
+func card_slot_count() -> int:
+	return 0
 
 
 func is_handheld() -> bool:

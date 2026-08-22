@@ -26,11 +26,18 @@ enum MediaType { CARTRIDGE = 0, DISC_TRAY = 1, DISC_INSERT = 2 }
 ## How this system's games are loaded.
 @export var media_type: MediaType = MediaType.CARTRIDGE
 
-## True when this hardware saves to a removable memory card rather than to the
-## media itself. Shows the console's card slot, and makes the seated card — not
-## the disc — decide which save image is mounted. With no card in, nothing
-## persists, which is why the card slot and the save path are the same switch.
-@export var memory_cards: bool = false
+## How many removable card slots this hardware has (0 = none). Shows that many
+## card slots on the console, and makes the seated cards — not the disc — decide
+## which save images are mounted. With no card in, nothing persists, which is why
+## the card slot and the save path are the same switch.
+##
+## The PlayStation has one; the GameCube and the Wii have two.
+@export var card_slots: int = 0
+
+## Which family of card fits them: the folder under save/memcards/ and the image
+## format, resolved through CardFormats.for_family(). A Wii takes GAMECUBE cards,
+## which is why this is a family and not the systemid.
+@export var card_family: String = ""
 
 ## True when this hardware has a serial port on the back for a link cable
 ## between two consoles -- the PlayStation's SIO1, not the controller bus.

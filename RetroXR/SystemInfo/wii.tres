@@ -8,5 +8,7 @@ systemid = "wii"
 display_name = "Nintendo Wii"
 native_ports = 4
 media_type = 2
+card_slots = 2
+card_family = "gamecube"
 supports_multitap = false
 multitap_ports = 0
