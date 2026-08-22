@@ -52,9 +52,14 @@ var gba_empty := false
 ## Boot both cores and run them side by side WITHOUT cabling them, so the cost
 ## of the bus can be told from the cost of Dolphin.
 var no_cable := false
+## How many handhelds to hang off the console. Four Swords Adventures takes
+## four, one per controller port, each on its OWN cable — four separate wires,
+## not one bus of five, exactly as the hardware does it.
+var gbas := 1
 
 var _gc: Node = null
 var _gba: Node = null
+var _gbas: Array = []
 var _ticks := 0
 var _cabled := false
 var _fail := 0
@@ -81,15 +86,20 @@ func _ready() -> void:
 			gba_empty = true
 		elif arg == "--no-cable":
 			no_cable = true
+		elif arg.begins_with("--gbas="):
+			gbas = clampi(int(arg.trim_prefix("--gbas=")), 1, 4)
 	get_tree().create_timer(600.0).timeout.connect(func() -> void:
 		print("[gcgba] TIMEOUT at tick %d" % _ticks)
 		_report()
 		get_tree().quit(1))
 
 	_gc = _spawn(gc_core, gc_rom)
-	_gba = _spawn(gba_core, "" if gba_empty else gba_rom)
+	for i in range(gbas):
+		_gbas.append(_spawn(gba_core, "" if gba_empty else gba_rom))
+	_gba = _gbas[0]
 	print("[gcgba] %s <- %s" % [gc_core, gc_rom.get_file()])
-	print("[gcgba] %s <- %s" % [gba_core, "(no cartridge, multiboot)" if gba_empty else gba_rom.get_file()])
+	print("[gcgba] %d x %s <- %s" % [gbas, gba_core,
+		"(no cartridge, multiboot)" if gba_empty else gba_rom.get_file()])
 
 
 func _spawn(core: String, rom: String) -> Node:
@@ -109,7 +119,10 @@ func _process(_d: float) -> void:
 		# Both cores have to be UP before the lead means anything: a bus joined
 		# before a core has attached its serial hardware is a wire with no ends.
 		var gc_up: bool = not (_gc.GetCoreIdentity() as Dictionary).is_empty()
-		var gba_up: bool = not (_gba.GetCoreIdentity() as Dictionary).is_empty()
+		var gba_up := true
+		for g: Node in _gbas:
+			if (g.GetCoreIdentity() as Dictionary).is_empty():
+				gba_up = false
 		if not (gc_up and gba_up):
 			if _ticks > BOOT_TICKS:
 				_bad("a core never came up (gc=%s gba=%s)" % [gc_up, gba_up])
@@ -124,30 +137,38 @@ func _process(_d: float) -> void:
 		if no_cable:
 			print("[gcgba] NOT cabling (control run)")
 			return
-		# Exactly what GcGbaCable does on seating, in the same order.
-		_gc.SetControllerPortDevice(GC_PORT, DEVICE_GBA_LINK)
-		var ok: bool = _gc.LinkConnect(_gba, GC_PORT, GBA_JOY_PORT)
-		print("[gcgba] LinkConnect -> %s (console port %d <-> handheld JOY %d)" % [
-			ok, GC_PORT, GBA_JOY_PORT])
-		if not ok:
-			_bad("the two cores refused to share a wire")
+		# Exactly what GcGbaCable does on seating, in the same order, once per
+		# lead. Each handheld gets its own controller port and its own wire.
+		for i in range(_gbas.size()):
+			_gc.SetControllerPortDevice(i, DEVICE_GBA_LINK)
+			var ok: bool = _gc.LinkConnect(_gbas[i], i, GBA_JOY_PORT)
+			print("[gcgba] LinkConnect port %d -> %s" % [i, ok])
+			if not ok:
+				_bad("console port %d refused to share a wire" % i)
 		return
 
-	var t0 := int(_gc.LinkTraffic(GC_PORT))
-	var t1 := int(_gba.LinkTraffic(GBA_JOY_PORT))
+	var t0 := 0
+	for i in range(_gbas.size()):
+		t0 += int(_gc.LinkTraffic(i))
+	var t1 := 0
+	for g: Node in _gbas:
+		t1 += int(g.LinkTraffic(GBA_JOY_PORT))
 	_peak_traffic[0] = maxi(_peak_traffic[0], t0)
 	_peak_traffic[1] = maxi(_peak_traffic[1], t1)
 
 	if _ticks % 600 == 0:
-		print("[gcgba] tick %d: gc frame %d, gba frame %d, peers %d/%d, traffic %d/%d" % [
-			_ticks, _gc.GetFrameCount(), _gba.GetFrameCount(),
-			_gc.LinkPeerCount(GC_PORT), _gba.LinkPeerCount(GBA_JOY_PORT), t0, t1])
+		var slowest := 1 << 30
+		for g: Node in _gbas:
+			slowest = mini(slowest, int(g.GetFrameCount()))
+		print("[gcgba] tick %d: gc frame %d, slowest gba frame %d, traffic %d/%d" % [
+			_ticks, _gc.GetFrameCount(), slowest, t0, t1])
 
 	if _ticks >= BOOT_TICKS + RUN_TICKS:
 		_report()
 		_done = true
 		_gc.StopContent()
-		_gba.StopContent()
+		for g: Node in _gbas:
+			g.StopContent()
 		await get_tree().create_timer(3.0).timeout
 		print("[gcgba] RESULT=%s" % ("FAIL" if _fail > 0 else "PASS"))
 		get_tree().quit(1 if _fail > 0 else 0)
@@ -155,9 +176,14 @@ func _process(_d: float) -> void:
 
 func _report() -> void:
 	var gc_peers: int = _gc.LinkPeerCount(GC_PORT) if _gc != null else 0
-	var gba_peers: int = _gba.LinkPeerCount(GBA_JOY_PORT) if _gba != null else 0
-	print("[gcgba] ---- gc frames=%d gba frames=%d" % [
-		_gc.GetFrameCount() if _gc else -1, _gba.GetFrameCount() if _gba else -1])
+	var gba_peers := 1 << 30
+	for g: Node in _gbas:
+		gba_peers = mini(gba_peers, int(g.LinkPeerCount(GBA_JOY_PORT)))
+	var frames: Array = []
+	for g: Node in _gbas:
+		frames.append(int(g.GetFrameCount()))
+	print("[gcgba] ---- gc frames=%d, gba frames=%s" % [
+		_gc.GetFrameCount() if _gc else -1, str(frames)])
 	print("[gcgba] ---- peers: console %d, handheld %d" % [gc_peers, gba_peers])
 	print("[gcgba] ---- traffic peak: console %d, handheld %d" % [
 		_peak_traffic[0], _peak_traffic[1]])
@@ -167,7 +193,10 @@ func _report() -> void:
 	var secs := float(Time.get_ticks_msec() - _run_started_ms) / 1000.0
 	if secs > 0.0:
 		var gc_fps := float(int(_gc.GetFrameCount()) - _frames_at_start[0]) / secs
-		var gba_fps := float(int(_gba.GetFrameCount()) - _frames_at_start[1]) / secs
+		var slowest := 1 << 30
+		for g: Node in _gbas:
+			slowest = mini(slowest, int(g.GetFrameCount()))
+		var gba_fps := float(slowest - _frames_at_start[1]) / secs
 		print("[gcgba] ---- throughput over %.1f s: console %.1f fps, handheld %.1f fps%s" % [
 			secs, gc_fps, gba_fps, "  (UNCABLED control)" if no_cable else ""])
 	if no_cable:
