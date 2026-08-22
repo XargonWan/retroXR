@@ -36,8 +36,23 @@ const CORES: Dictionary = {
 }
 
 
+## Debug: let an UNVETTED core start a session anyway.
+##
+## The allowlist refuses to start rather than risk a silent desync, but the
+## session already detects one — periodic RAM CRCs, a savestate resync, three
+## strikes to spectator. Refusing to start is belt-and-braces, and it forecloses
+## its own evidence: a core cannot be shown deterministic-in-practice if nothing
+## may run it. This switch is how a core gets MEASURED before it is listed.
+##
+## A static, deliberately, and never written to AppPrefs: a debug option that
+## survives a restart is one a player can be left stranded in.
+static var debug_allow_unverified := false
+
+
 ## True if the core is on the allowlist AND has passed determinism vetting.
 static func is_capable(core_name: String) -> bool:
+	if debug_allow_unverified and not core_name.is_empty():
+		return true
 	var e: Dictionary = CORES.get(core_name, {})
 	return bool(e.get("verified", false))
 

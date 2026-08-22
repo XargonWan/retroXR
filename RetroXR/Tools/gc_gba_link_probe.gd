@@ -56,6 +56,11 @@ var no_cable := false
 ## four, one per controller port, each on its OWN cable — four separate wires,
 ## not one bus of five, exactly as the hardware does it.
 var gbas := 1
+## Dump composite PNG frames here: the console's picture with every handheld's
+## screen in a row beneath it. Needs a WINDOWED run for a HW-render core -- the
+## dummy renderer has no context for Dolphin to draw into.
+var capture_dir := ""
+var capture_every := 2
 
 var _gc: Node = null
 var _gba: Node = null
@@ -67,6 +72,7 @@ var _done := false
 var _peak_traffic := [0, 0]
 var _run_started_ms := 0
 var _frames_at_start := [0, 0]
+var _shot := 0
 
 
 func _ready() -> void:
@@ -88,6 +94,8 @@ func _ready() -> void:
 			no_cable = true
 		elif arg.begins_with("--gbas="):
 			gbas = clampi(int(arg.trim_prefix("--gbas=")), 1, 4)
+		elif arg.begins_with("--capture="):
+			capture_dir = arg.trim_prefix("--capture=")
 	get_tree().create_timer(600.0).timeout.connect(func() -> void:
 		print("[gcgba] TIMEOUT at tick %d" % _ticks)
 		_report()
@@ -156,6 +164,9 @@ func _process(_d: float) -> void:
 	_peak_traffic[0] = maxi(_peak_traffic[0], t0)
 	_peak_traffic[1] = maxi(_peak_traffic[1], t1)
 
+	if not capture_dir.is_empty() and _ticks % capture_every == 0:
+		_capture()
+
 	if _ticks % 600 == 0:
 		var slowest := 1 << 30
 		for g: Node in _gbas:
@@ -211,6 +222,50 @@ func _report() -> void:
 		print("[gcgba] NOTE: the wire carried nothing. Expected when the handheld")
 		print("[gcgba]       holds its own cartridge: Four Swords Adventures")
 		print("[gcgba]       uploads a program to an EMPTY GBA (--gba-empty).")
+
+
+## One frame: the console on top, the handhelds in a row beneath, each labelled
+## by the controller port its lead is in.
+func _capture() -> void:
+	var gc_img: Image = _gc.GetVideoImage()
+	if gc_img == null or gc_img.is_empty():
+		if _shot == 0:
+			print("[gcgba] capture: the console has no picture yet")
+		return
+	var shots: Array = []
+	for g: Node in _gbas:
+		var im: Image = g.GetVideoImage()
+		if im == null or im.is_empty():
+			return
+		shots.append(im)
+	if _shot == 0:
+		print("[gcgba] capture: console %dx%d, handheld %dx%d" % [
+			gc_img.get_width(), gc_img.get_height(),
+			(shots[0] as Image).get_width(), (shots[0] as Image).get_height()])
+		DirAccess.make_dir_recursive_absolute(capture_dir)
+
+	var scale := 2
+	var gw: int = gc_img.get_width()
+	var gh: int = gc_img.get_height()
+	var hw: int = (shots[0] as Image).get_width() * scale
+	var hh: int = (shots[0] as Image).get_height() * scale
+	var row_w: int = hw * shots.size()
+	var width: int = maxi(gw, row_w)
+	var canvas := Image.create(width, gh + hh, false, Image.FORMAT_RGBA8)
+	canvas.fill(Color.BLACK)
+
+	var gc_copy := gc_img.duplicate() as Image
+	gc_copy.convert(Image.FORMAT_RGBA8)
+	canvas.blit_rect(gc_copy, Rect2i(Vector2i.ZERO, gc_copy.get_size()),
+		Vector2i((width - gw) / 2, 0))
+	for i in range(shots.size()):
+		var im := (shots[i] as Image).duplicate() as Image
+		im.convert(Image.FORMAT_RGBA8)
+		im.resize(hw, hh, Image.INTERPOLATE_NEAREST)
+		canvas.blit_rect(im, Rect2i(Vector2i.ZERO, im.get_size()),
+			Vector2i((width - row_w) / 2 + i * hw, gh))
+	canvas.save_png("%s/f%05d.png" % [capture_dir, _shot])
+	_shot += 1
 
 
 func _ident(lib: Node) -> String:
