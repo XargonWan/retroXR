@@ -49,6 +49,9 @@ func _ready() -> void:
 		await _test_a_carried_nunchuk_reads_the_path_it_is_carried_on()
 		await _test_a_gentle_carry_keeps_the_pose()
 		await _test_motion_is_not_a_button()
+	if _wants("noise"):
+		await _test_a_still_hand_reports_a_still_device()
+		await _test_the_deadband_leaves_a_punch_alone()
 	if _wants("pair"):
 		_test_the_extension_takes_a_sub_device()
 		await _test_bare_remote()
@@ -192,30 +195,43 @@ func _test_smoothing_settles_on_rest() -> void:
 # the arithmetic against what the path says the answer is.
 
 ## Carry a Nunchuk along x = amp*sin(2*PI*hz*t) for one second of physics, the
-## way a hand carries it: frozen kinematic, moved on the physics tick. Answers
-## with the worst motion component and the worst pose error seen.
-func _carry(nc: Nunchuk, amp: float, hz: float) -> Dictionary:
+## way a hand carries it: frozen kinematic, moved on the physics tick.
+##
+## Three numbers, and which one a case reads matters. "peak" is the DERIVED
+## acceleration, straight off _accel_smoothed, so it measures the differentiation
+## and nothing after it. "out" and "tilt" come through accel_in_nunchuk_frame —
+## the public path, deadband included — so they measure what the core is actually
+## handed. A case that means to guard the filter must read the latter, or it is
+## reading past the thing it is checking.
+func _carry(nc: Nunchuk, amp: float, hz: float, jitter := 0.0) -> Dictionary:
 	nc.freeze = true
 	nc.freeze_mode = RigidBody3D.FREEZE_MODE_KINEMATIC
 	nc.global_transform = Transform3D(Basis(), Vector3(0, 1.2, 0))
 	var t := 0.0
 	var peak := 0.0
+	var out := 0.0
 	var tilt := 0.0
 	# A settling lap first: the low-pass starts at rest and the first ticks are
 	# it catching up, not the path.
 	for tick in range(int(1.5 * Engine.physics_ticks_per_second)):
 		t += 1.0 / float(Engine.physics_ticks_per_second)
-		nc.global_position = Vector3(amp * sin(TAU * hz * t), 1.2, 0)
+		var x := amp * sin(TAU * hz * t)
+		if jitter > 0.0:
+			x += randf_range(-jitter, jitter)
+		nc.global_position = Vector3(x, 1.2, 0)
 		await get_tree().physics_frame
 		if t < 0.5:
 			continue
 		peak = maxf(peak, (nc._accel_smoothed - Vector3.UP * Nunchuk.G).length())
 		# Upright the whole way, so the reading should be one g on the device's
-		# own up axis, leaned over by exactly as much as the motion justifies.
+		# own up axis, leaned over by exactly as much as the motion justifies —
+		# which also makes gravity exactly (0, 0, 1) in the reported frame, so
+		# what is left after subtracting it is the motion the core receives.
 		var g_vec := nc.accel_in_nunchuk_frame()
+		out = maxf(out, ((g_vec - Vector3(0, 0, 1)) * Nunchuk.G).length())
 		if g_vec.length() > 0.001:
 			tilt = maxf(tilt, rad_to_deg(g_vec.normalized().angle_to(Vector3(0, 0, 1))))
-	return {"peak": peak, "tilt": tilt}
+	return {"peak": peak, "out": out, "tilt": tilt}
 
 
 func _test_a_carried_nunchuk_reads_the_path_it_is_carried_on() -> void:
@@ -244,6 +260,41 @@ func _test_a_gentle_carry_keeps_the_pose() -> void:
 	var got: Dictionary = await _carry(nc, 0.05, 0.5)
 	_ok("a gently carried Nunchuk still reports which way is up",
 		float(got["tilt"]) < 5.0, "worst pose error %.1f degrees" % got["tilt"])
+	nc.queue_free()
+
+
+# ── The noise floor ──────────────────────────────────────────────────────────
+# A held device's acceleration is a second difference of a TRACKED pose, so
+# position noise arrives multiplied by the frame rate squared. It does not read
+# as noise on screen: it tilts the vector the game takes the controller's pose
+# from, so a still hand wobbles. See MotionFilter.
+
+
+func _test_a_still_hand_reports_a_still_device() -> void:
+	var nc := await _at_rest_nunchuk()
+	# A millimetre of jitter with the hand going nowhere. Twice what a Quest
+	# controller actually shows at rest, so passing here has margin.
+	var got: Dictionary = await _carry(nc, 0.0, 0.0, 0.001)
+	_ok("a still hand with tracking jitter reports a still device",
+		float(got["tilt"]) < 1.0, "worst pose error %.1f degrees" % got["tilt"])
+	nc.queue_free()
+
+
+func _test_the_deadband_leaves_a_punch_alone() -> void:
+	var nc := await _at_rest_nunchuk()
+	# The deadband is only defensible if a real thrust survives it. 40 cm at
+	# 3 Hz is a punch; it must come through within a tenth of the path's own
+	# acceleration, not merely be non-zero.
+	var amp := 0.20
+	var hz := 3.0
+	var got: Dictionary = await _carry(nc, amp, hz)
+	var want := amp * pow(TAU * hz, 2.0)
+	# Read through the public path, so a deadband set too high fails here — off
+	# _accel_smoothed it would pass however much the filter swallowed.
+	var ratio: float = float(got["out"]) / want
+	_ok("and a real punch still comes through it",
+		ratio > 0.6, "%.1f m/s^2 against a true %.1f (%.2fx)"
+			% [got["out"], want, ratio])
 	nc.queue_free()
 
 

@@ -211,7 +211,8 @@ func _update_accel(delta: float) -> void:
 ## up and forward are Godot's, exactly as the remote's are. Held upright at
 ## rest this returns (0, 0, 1).
 func accel_in_nunchuk_frame() -> Vector3:
-	var local := global_transform.basis.orthonormalized().inverse() * (_accel_smoothed / G)
+	var a := MotionFilter.deadband_motion(_accel_smoothed, G)
+	var local := global_transform.basis.orthonormalized().inverse() * (a / G)
 	return Vector3(-local.x, local.z, local.y)
 
 

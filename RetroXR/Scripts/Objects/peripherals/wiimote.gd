@@ -1405,7 +1405,8 @@ func _send_accel(libretro: Libretro, delta: float) -> void:
 ## (0, 0, 1) — the same at-rest reading the GDExtension returns when nothing is
 ## driving the sensor at all.
 func accel_in_wiimote_frame() -> Vector3:
-	var local := _barrel_tip.global_transform.basis.inverse() * (_accel_smoothed / G)
+	var a := MotionFilter.deadband_motion(_accel_smoothed, G)
+	var local := _barrel_tip.global_transform.basis.inverse() * (a / G)
 	return Vector3(-local.x, local.z, local.y)
 
 
