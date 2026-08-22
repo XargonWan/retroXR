@@ -91,12 +91,6 @@ var _audio_player: AudioStreamPlayer3D = null
 # Meta XR Audio voice ids, when the core is being spatialised through the SDK.
 # The C++ AudioHandler owns their lifetime; this script only places them.
 var _audio_voices: PackedInt32Array = PackedInt32Array()
-# How long the bind waits for the SDK to publish voice ids before settling for
-# whichever backend did come up. Frames, not seconds: this is a startup handshake
-# with the emulation thread, and about four seconds of them is far longer than it
-# has ever taken. See _ensure_audio_bound.
-const AUDIO_BIND_ATTEMPTS := 300
-var _audio_bind_tries := 0
 var _audio_bind_settled := false
 # The card that floats over this machine's picture — achievement unlocks, and
 # the notice raised when a game cannot run. Made on demand rather than at
@@ -885,22 +879,31 @@ func _bind_audio_player() -> void:
 ## of the room sounds about right like that, which is why this went unnoticed
 ## until a handheld was carried around and its sound stayed behind.
 ##
-## The retry is bounded because on the AudioStreamPlayer3D backend no voice id is
-## ever coming — GetAudioVoiceIds() answers empty for the whole run — and an
-## unbounded retry is a GDExtension call per frame per running machine, forever,
-## to re-learn a fixed answer. Once the window closes, whatever the handler did
-## choose is bound and the question is not asked again.
+## The wait ends on the handler's ANSWER, never on a deadline. It used to give up
+## after 300 frames, which at 72 Hz is 4.2 s — and Dolphin reported its voices
+## 8.1 s after power-on. The window closed first, the empty voice list was read as
+## "this core runs on the fallback", and the AudioStreamPlayer3D was bound for the
+## rest of the run. Nothing feeds that player once the handler picks the SDK, and
+## the two voices it did create are never placed, so they never publish a pose —
+## and the mixer does not mix a voice that has not said where it is. A silent Wii
+## in a room where everything else could be heard.
+##
+## Elapsed frames only ever stood in for "a backend has been chosen", and the two
+## agree solely for cores that come up fast. fceumm answers in about 34 frames and
+## never noticed; Dolphin straddles the deadline, which is why the same build was
+## silent on one launch and fine on the next — a warm shader cache decided it.
 func _ensure_audio_bound() -> void:
 	if _audio_bind_settled or not is_powered_on:
 		return
-	# Only the voice ids say which backend came up. A non-null _audio_player says
-	# nothing: Wrapper creates that AudioStreamPlayer3D node unconditionally,
-	# before the handler has chosen anything, so it is already sitting there on
-	# the first attempt -- and keying the retry off it stopped the retry dead.
-	if _libretro.GetAudioVoiceIds().is_empty():
-		_audio_bind_tries += 1
-		if _audio_bind_tries < AUDIO_BIND_ATTEMPTS:
-			return
+	# IsAudioReady is the whole question. Before the sink is up an empty voice
+	# list means "not asked yet"; after it, the same empty list means the fallback
+	# backend, and that is the distinction nothing on this side could draw. A
+	# non-null _audio_player never could either: Wrapper creates that node
+	# unconditionally, before the handler has chosen anything, so it is already
+	# sitting there on the first attempt — keying the retry off it stopped the
+	# retry dead.
+	if not _libretro.IsAudioReady():
+		return
 	_bind_audio_player()
 	_audio_bind_settled = true
 
@@ -2105,10 +2108,9 @@ func power_on() -> void:
 func _after_core_started() -> void:
 	# A machine with nowhere to send its picture is not heard either.
 	_apply_audio_playing()
-	# A fresh run re-opens the bind window — which backend comes up is decided per
-	# core start, and this first attempt is expected to find neither.
+	# A fresh run re-asks which backend came up — that is decided per core start,
+	# and this first attempt is expected to find neither.
 	_audio_bind_settled = false
-	_audio_bind_tries = 0
 	_bind_audio_player()
 	is_powered_on = true
 	set_process(true)
