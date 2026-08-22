@@ -104,10 +104,19 @@ var _active_layer: int = POINTABLE_LAYER
 func _ready() -> void:
 	collision_layer |= POINTABLE_LAYER
 	_active_layer = collision_layer
-	_mesh_local_origin = _mesh.position
-	_mesh_depress_parent = _mesh.get_parent() as Node3D
+	# Attached BEFORE the mesh is looked at, because set_button_mesh only sets an
+	# outline source when there is already an outline to set it on.
 	_outline = WidgetOutline.attach(self)
-	_outline.set_source(_mesh)
+	# A button whose cap is measured off a shell carries no ButtonMesh in its own
+	# scene and is handed one later by set_button_mesh, which records all of this
+	# itself. Reading it here took the whole of _ready down with it: no outline,
+	# and past the await below no _controllers either — and _process does nothing
+	# with an empty controller list, so the button was dead to a hand rather than
+	# merely unpainted. The DualShock's ANALOG switch ships exactly that way.
+	if _mesh != null:
+		_mesh_local_origin = _mesh.position
+		_mesh_depress_parent = _mesh.get_parent() as Node3D
+		_outline.set_source(_mesh)
 	# Controllers aren't added until the first frame, so wait one frame
 	await get_tree().process_frame
 	# Find all XRController3D nodes in the scene by type
