@@ -550,6 +550,12 @@ func _cold_start_local(start_frame: int) -> bool:
 		# and a hitch anywhere holds the gate for all of them.
 		if pre_lib != null and pre_lib.has_method("SetNetplayCrcInterval"):
 			pre_lib.SetNetplayCrcInterval(_group_crc_interval())
+		# Where that hash comes from is per CORE, not per group: it is a fact
+		# about whether this emulator's RAM can be read coherently between
+		# frames, and the machine next to it on the bus may well be fine.
+		if pre_lib != null and pre_lib.has_method("SetNetplayCrcFromState"):
+			pre_lib.SetNetplayCrcFromState(
+				NetplayCores.crc_from_state(str(spec.get("core", ""))))
 		# net_start_core sets the gate (SetNetplayMode) BEFORE StartContent so
 		# the core holds at the start frame until inputs post.
 		#

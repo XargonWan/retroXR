@@ -177,10 +177,13 @@ func _test_cores() -> void:
 		"cores/fceumm is vetted for rollback")
 	_eq(NetplayCores.strategies_for("dolphin"), [],
 		"cores/an unverified core is vetted for nothing")
-	_ok(NetplayCores.strategies_for("snes9x").is_empty(),
-		"cores/and so is an unvetted one")
 	_ok(NetplayCores.strategies_for("nonesuch").is_empty(),
-		"cores/and an unknown one")
+		"cores/and so is an unknown one")
+	# snes9x was vetted for cold-start determinism and state transfer, and never
+	# measured for rollback. Verified is not a blanket yes: it earns the entry,
+	# and the entry says which strategies the evidence actually covers.
+	_eq(NetplayCores.strategies_for("snes9x"), [NetplayCores.Strategy.LOCKSTEP],
+		"cores/a core vetted for some strategies gets only those")
 	_ok(not NetplayCores.strategies_for("gambatte").has(NetplayCores.Strategy.ROLLBACK),
 		"cores/gambatte is not vetted for rollback")
 	_ok(NetplayCores.strategies_for("mgba").has(NetplayCores.Strategy.DETERMINISM),
@@ -197,10 +200,13 @@ func _test_cores() -> void:
 		"cores/fceumm is vetted x64 against arm64")
 	_ok(not NetplayCores.allows_cross_play("dolphin"),
 		"cores/dolphin is not, because it picks its CPU backend from the host")
-	_ok(not NetplayCores.allows_cross_play("snes9x"),
-		"cores/an unvetted core never crosses architectures")
+	# snes9x is fully verified and still does not cross, which is the point of
+	# keeping the two apart: passing determinism vetting on one machine says
+	# nothing about whether the same arithmetic survives a different CPU.
+	_ok(NetplayCores.is_capable("snes9x") and not NetplayCores.allows_cross_play("snes9x"),
+		"cores/being verified does not imply crossing architectures")
 	_ok(not NetplayCores.allows_cross_play("nonesuch"),
-		"cores/nor an unknown one")
+		"cores/nor does being unknown")
 
 	# A large core buys back the hitch of hashing its whole RAM with a longer gap.
 	_eq(NetplayCores.crc_interval("fceumm"), NetplayCores.DEFAULT_CRC_INTERVAL,

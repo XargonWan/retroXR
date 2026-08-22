@@ -199,6 +199,33 @@ static func crc_interval(core_name: String) -> int:
 	return int(e.get("crc_interval", DEFAULT_CRC_INTERVAL))
 
 
+## True when this core's desync CRC must come from a SAVESTATE, not live RAM.
+##
+## Reading RAM between frames assumes the core is quiescent when retro_run
+## returns, and a core that emulates its CPU on a thread of its own is not:
+## Dolphin comes back on a GPU field boundary while its CPU thread keeps
+## writing, so the hash races that thread and two peers disagree even when the
+## emulation is identical -- a check that reports divergence at random.
+##
+## A savestate is the one snapshot such a core has to make coherent. It is far
+## more expensive, which is what a longer crc_interval pays for.
+##
+## DOLPHIN CANNOT USE IT, which is the awkward part: measured, asking it to
+## serialize from the emulation thread between frames wedges it at frame 1.
+## retro_serialize marshals onto its CPU thread and waits; that thread is
+## waiting on the GPU FIFO; and the GPU loop only runs inside retro_run, which
+## the caller has already returned from. The same reasoning applies to every
+## RequestSaveState under the netplay gate, so a Dolphin late join or resync
+## would wedge in the same place -- which is a much better reason for its
+## state_transfer:false than the one recorded there.
+##
+## So the oracle a threaded core needs has to be taken from INSIDE the frame,
+## not between frames, and that is not something the frontend can reach today.
+static func crc_from_state(core_name: String) -> bool:
+	var e: Dictionary = CORES.get(core_name, {})
+	return bool(e.get("crc_from_state", false))
+
+
 ## True when this core's saves must be redirected to an empty per-session folder.
 ##
 ## For cores that manage their own save files outside RETRO_MEMORY_SAVE_RAM, the
