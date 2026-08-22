@@ -21,6 +21,8 @@ const TEST_SYSTEM := "__romm_selftest"
 
 var _pass := 0
 var _fail := 0
+## The player's romm_sync.json as it was before this run touched it.
+var _ledger_before := ""
 
 
 func _ready() -> void:
@@ -31,6 +33,19 @@ func _ready() -> void:
 	get_tree().create_timer(240.0).timeout.connect(func() -> void:
 		print("[test] TIMEOUT")
 		get_tree().quit(1))
+
+	# Several cases stand up their own RommSaveSync and call save_state() on it,
+	# which writes the PLAYER'S real romm_sync.json from that instance's empty
+	# tables -- so a run left the ledger holding this file's __resolve_selftest
+	# entries and nothing else.
+	#
+	# That ledger is where a hash-resolved rom id lives, and rom_id_for now falls
+	# back to it, so losing it loses the attribution for every game the gamelist
+	# cannot answer for. Measured: a run wiped two resolved GameCube ids.
+	#
+	# Snapshotted whole and put back at the end, the same way the arcade manifest
+	# already is.
+	_ledger_before = FileAccess.get_file_as_string(RommSaveSync.state_path()) 		if FileAccess.file_exists(RommSaveSync.state_path()) else ""
 
 	_test_pair_url()
 	_test_systemid_for()
@@ -61,8 +76,26 @@ func _ready() -> void:
 	_test_gamelist_dedupe()
 	await _test_http_stalls()
 
+	_restore_ledger()
+
 	print("[test] ---- %d passed, %d failed ----" % [_pass, _fail])
 	get_tree().quit(1 if _fail > 0 else 0)
+
+
+## Put the player's sync ledger back byte for byte, including deleting one this
+## run created where there was none.
+func _restore_ledger() -> void:
+	var path := RommSaveSync.state_path()
+	if _ledger_before.is_empty():
+		if FileAccess.file_exists(path):
+			DirAccess.remove_absolute(path)
+		return
+	var f := FileAccess.open(path, FileAccess.WRITE)
+	if f == null:
+		push_warning("[romm_tests] cannot restore %s" % path)
+		return
+	f.store_string(_ledger_before)
+	f.close()
 
 
 func _ok(name: String, cond: bool, detail: String = "") -> void:
