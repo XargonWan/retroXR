@@ -96,6 +96,27 @@ func _on_saved(data: PackedByteArray, frame: int) -> void:
 					complemented += 1
 			print("[rt] %d of %d differing bytes are exact bitwise complements (%.1f%%)" % [
 				complemented, diff, 100.0 * complemented / maxi(diff, 1)])
+			# A handful of bytes in a state's first kilobyte is almost always a
+			# HEADER - a counter, a timestamp, the emulator's own bookkeeping -
+			# and says nothing about the emulated machine. Hundreds of thousands
+			# spread through a table is the machine. The verdict cannot tell
+			# them apart, so print the fields and let a human decide.
+			if runs <= 24:
+				print("[rt] the differing fields:")
+				var shown := 0
+				var i2 := 0
+				while i2 < data.size() and shown < 24:
+					if data[i2] != _s1[i2]:
+						var j := i2
+						while j < data.size() and data[j] != _s1[j]:
+							j += 1
+						print("[rt]   @%-8d len %-3d  before %s  after %s" % [
+							i2, j - i2,
+							_s1.slice(i2, j).hex_encode(), data.slice(i2, j).hex_encode()])
+						shown += 1
+						i2 = j
+					else:
+						i2 += 1
 			var tmp := OS.get_environment("TEMP").replace("\\", "/")
 			var f1 := FileAccess.open(tmp + "/s1.bin", FileAccess.WRITE)
 			f1.store_buffer(_s1); f1.close()
