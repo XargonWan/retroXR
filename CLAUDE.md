@@ -793,9 +793,19 @@ its own commercial cartridge is a legitimate cabling but not a conversation
 either title was written for. Do not read a low byte count in the cartridge case
 as a fault.
 
-The `LinkCoordinator` cost report at teardown is worth reading either way: this
-pairing logged a 380 ms worst stall on the console and 1021 ms on the handheld,
-with 1.5 M parked advance calls. The bus works; it is not cheap.
+**The bus is cheap, and the teardown cost report does not say otherwise.**
+Measured with `--no-cable`, which boots both cores side by side and never joins
+them: uncabled **57.1 / 57.3 fps**, cabled **54.8 / 54.6 fps** over the same
+28.4 s. About 4%. The report's "22368 ms blocked" over a 28.4 s run looks
+alarming and is not lost time — the two cores are on separate threads, so one
+blocking IS the other one working. Read the fps, not the blocked total.
+
+What the report is good for is STALLS, and there is one real artifact: a single
+~1 s hitch early on (967 ms on the console at 1034 ms in, 1197 ms on the
+handheld at 2394 ms in), with only 1 and 6 further events over 20 ms in the
+whole run. It lands during the program upload and does not recur. On a desktop
+that is a hitch; in a headset it would be felt once, and it is the one number
+worth watching if this ever reaches a Quest.
 
 Neither core is in `NetplayCores`, so none of this can start a netplay session
 yet — this exercises the BUS, not a session over it.

@@ -49,6 +49,9 @@ var gba_rom := _home + "/retroxr/roms/game_boy_advance/Super Mario Advance (USA,
 ## Cable the handheld with NO cartridge, which is what Four Swords Adventures
 ## actually expects: the console uploads the program over the wire.
 var gba_empty := false
+## Boot both cores and run them side by side WITHOUT cabling them, so the cost
+## of the bus can be told from the cost of Dolphin.
+var no_cable := false
 
 var _gc: Node = null
 var _gba: Node = null
@@ -57,6 +60,8 @@ var _cabled := false
 var _fail := 0
 var _done := false
 var _peak_traffic := [0, 0]
+var _run_started_ms := 0
+var _frames_at_start := [0, 0]
 
 
 func _ready() -> void:
@@ -74,6 +79,8 @@ func _ready() -> void:
 			root_dir = arg.trim_prefix("--root=")
 		elif arg == "--gba-empty":
 			gba_empty = true
+		elif arg == "--no-cable":
+			no_cable = true
 	get_tree().create_timer(600.0).timeout.connect(func() -> void:
 		print("[gcgba] TIMEOUT at tick %d" % _ticks)
 		_report()
@@ -110,8 +117,13 @@ func _process(_d: float) -> void:
 				get_tree().quit(1)
 			return
 		_cabled = true
+		_run_started_ms = Time.get_ticks_msec()
+		_frames_at_start = [int(_gc.GetFrameCount()), int(_gba.GetFrameCount())]
 		print("[gcgba] gc  = %s" % _ident(_gc))
 		print("[gcgba] gba = %s" % _ident(_gba))
+		if no_cable:
+			print("[gcgba] NOT cabling (control run)")
+			return
 		# Exactly what GcGbaCable does on seating, in the same order.
 		_gc.SetControllerPortDevice(GC_PORT, DEVICE_GBA_LINK)
 		var ok: bool = _gc.LinkConnect(_gba, GC_PORT, GBA_JOY_PORT)
@@ -149,6 +161,17 @@ func _report() -> void:
 	print("[gcgba] ---- peers: console %d, handheld %d" % [gc_peers, gba_peers])
 	print("[gcgba] ---- traffic peak: console %d, handheld %d" % [
 		_peak_traffic[0], _peak_traffic[1]])
+	# What the bus COSTS, which is the number to compare between a cabled run
+	# and a --no-cable control. Emulated frames per real second: 60 is a machine
+	# keeping up with itself, and anything well under that is the player waiting.
+	var secs := float(Time.get_ticks_msec() - _run_started_ms) / 1000.0
+	if secs > 0.0:
+		var gc_fps := float(int(_gc.GetFrameCount()) - _frames_at_start[0]) / secs
+		var gba_fps := float(int(_gba.GetFrameCount()) - _frames_at_start[1]) / secs
+		print("[gcgba] ---- throughput over %.1f s: console %.1f fps, handheld %.1f fps%s" % [
+			secs, gc_fps, gba_fps, "  (UNCABLED control)" if no_cable else ""])
+	if no_cable:
+		return
 	# The bus forming is the claim this probe makes. Both ends must SEE each
 	# other; a count of 1 is a lead hanging out of a socket.
 	if gc_peers < 2:
