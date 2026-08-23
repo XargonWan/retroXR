@@ -294,7 +294,19 @@ func _play_sfx(bank: Array, key: String) -> void:
 ## False while a save is being reloaded. RetroSystem.restore_cartridge seats media
 ## through the same snap zone a hand uses, so without this, loading a room plays a
 ## cartridge insert for every console in it at once.
+##
+## The tray hinge needs its own half of that. It is persisted as an articulated
+## control and restored by writing its angle and latch back, which emits
+## rotation_changed exactly like a push — and that write happens BEFORE the media
+## restore, outside _restoring_media entirely. ScenePersistence marks the control
+## for the duration of the write (the same flag that stops ObjectSync echoing a
+## restore back onto the wire), so read it here: without it, every room saved with
+## a cart pushed home clicks its cradle shut on arrival. A REMOTE peer's push is
+## deliberately not covered — a hand did move that one, just not this player's.
 func _hand_did_it() -> bool:
+	if _tray_hinge != null \
+			and bool(_tray_hinge.get_meta("net_restore_in_progress", false)):
+		return false
 	var host := get_parent()
 	if host == null:
 		return true
