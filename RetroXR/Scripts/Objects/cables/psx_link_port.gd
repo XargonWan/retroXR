@@ -25,25 +25,41 @@ extends LinkPort
 ## panel already, and the plate then lands as a black rectangle pasted over the
 ## console's own print -- so RetroSystemModelPlayStation turns this off, the same
 ## way it turns off RcaPort.show_jack for sockets the shell already draws.
-##
-## The dark recess is NOT part of this and stays either way: the shell's own
-## socket is bare silver and lights to a bright block under a flat ambient, so
-## the darkness that makes it read as a hole has to come from here.
 @export var show_legend: bool = true:
 	set(value):
 		show_legend = value
 		_apply_legend()
 
 
+## Whether to draw the dark recess.
+##
+## Same story one layer down. On the primitive body there is no socket until this
+## draws one. A console with a shell of its own has the socket MOULDED, and a box
+## laid over it is a black cube stuck on the back panel -- which is what it looked
+## like, because that is what it was. On such a shell this port is a SNAP ZONE and
+## nothing else: it contributes no geometry and only says where a plug goes.
+@export var show_recess: bool = true:
+	set(value):
+		show_recess = value
+		_apply_recess()
+
+
 func _ready() -> void:
 	super()
 	_apply_legend()
+	_apply_recess()
 
 
 func _apply_legend() -> void:
 	var legend := get_node_or_null("Legend") as Node3D
 	if legend != null:
 		legend.visible = show_legend
+
+
+func _apply_recess() -> void:
+	var jack := get_node_or_null("PsxLinkJack") as Node3D
+	if jack != null:
+		jack.visible = show_recess
 
 
 func plug_group() -> String:

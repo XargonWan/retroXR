@@ -28,15 +28,6 @@ const _SERIAL_PORT_SCENE := preload("res://Scenes/Objects/cables/psx_link_port.t
 ## default_model's figure, kept rather than re-derived so both bodies seat the
 ## same lead the same way.
 const SERIAL_PROUD := 0.001
-## The rear panel's own face at the serial socket, RAYCAST off a trimesh of the
-## shell (measure-shell-panel-by-raycast). Not derivable at spawn -- building
-## trimesh colliders for 39 meshes to place one socket is not a thing to do on
-## the main thread -- so it is measured once and authored, like every other
-## position this model takes out of the GLB's frame.
-const SERIAL_PANEL_Z := -0.08384
-## How far the dark slot stands in front of that face. The panel wears a printed
-## skin, and coplanar faces z-fight; a fraction proud always wins.
-const SERIAL_CLEAR := 0.0002
 
 ## Measured off the asset: the lid ships modelled at -50 degrees local X, and
 ## shutting it in the exporter is what makes 0 mean "closed" here.
@@ -689,30 +680,21 @@ func configure_memory_card_slot(slot: Node3D, index: int) -> void:
 ## luxury it could afford by not being a PlayStation.
 ##
 ## Same turn as configure_av_ports (180 about X, so the socket's local +Z points
-## out of the panel). Depth is the part that has to be measured, and the first
-## attempt measured the wrong thing: it took the back panel to be the model
-## AABB's minimum z. That is some other bulge entirely -- -93.37 against a panel
-## at -83.84 -- so the recess was seated 9.5 mm out in the air and read exactly as
-## what it is, a black cube stuck on the back of the console.
+## out of the panel). The shell MOULDS this socket, so nothing here draws one --
+## the port arrives as a snap zone with its recess and its legend both turned off,
+## exactly as the phono sockets arrive with show_jack off. Everything the player
+## sees is the console's own geometry.
 ##
-## The panel is raycast off a trimesh of the shell (measure-shell-panel-by-raycast;
-## the note's own warning is that an AABB will lie about this, which is the
-## mistake made here). Two things the rays settled that no render would have:
-## the panel is FLAT to 0.00 mm across the phono row, and JackSerial is not a
-## recessed connector at all. It spans -86.06 to -81.31 -- a hollow shroud
-## standing 2.2 mm PROUD of the panel, open at both ends, which is why a ray down
-## its axis passes clean through and hits the shell 2.5 mm further in.
+## Which leaves one job: say where a plug goes. That is JackSerial's front face,
+## less SERIAL_PROUD -- this connector's origin is its mating face, and it stops
+## just proud of the socket rather than flush with it. default_model uses the same
+## millimetre for the same connector on the stand-in box (port at -0.126 against a
+## panel at -0.125).
 ##
-## So the shroud is hidden and the slot is cut flush into the panel instead. The
-## alternative -- leaving it and darkening its bore -- puts a 2.2 mm lip back on
-## the panel, and a dark lip is the same silhouette as the cube that was reported.
-## Nothing is lost by hiding it: bare silver under a flat ambient lights to a pale
-## block, which is the fault this recess was drawn to cover in the first place.
-##
-## SERIAL_PROUD is the last millimetre and belongs to the CONNECTOR rather than
-## the shell: this port's origin is its mating face, which stops just proud of the
-## mouth rather than flush with it. default_model uses the same millimetre for the
-## same connector on the stand-in box (port at -0.126 against a panel at -0.125).
+## It was placed against the model AABB's minimum z instead, which is a bulge
+## somewhere else on the shell entirely: -93.37 against a socket face at -86.06.
+## So the recess it was still drawing stood 7 mm out in the air behind the
+## console, and read as exactly what it was.
 func build_serial_port(host: Node3D, systemid: String) -> void:
 	var info := SystemInfo.for_system(systemid)
 	if info == null or not info.serial_port:
@@ -725,17 +707,20 @@ func build_serial_port(host: Node3D, systemid: String) -> void:
 	if port == null:
 		return
 	host.add_child(port)
-	# The shell moulds SERIAL I/O into the panel already; the port's own plate
-	# would land on top of that print as a black rectangle. Same call as the
-	# show_jack = false the A/V sockets get, for the same reason.
+	# The shell draws the socket and prints its name. Both of the port's own are
+	# turned off, so it adds nothing to the panel and only marks the seat.
 	port.set("show_legend", false)
-	# x and y off the shell's own shroud, z off the panel it stands on -- then the
-	# shroud goes, because the slot replaces it rather than lining it.
-	var c := _mesh_aabb_local("JackSerial").get_center()
-	m.visible = false
-	var mouth_z: float = SERIAL_PANEL_Z - SERIAL_CLEAR
-	port.global_position = global_transform * Vector3(c.x, c.y, mouth_z - SERIAL_PROUD)
-	port.global_rotation = Vector3(PI, 0.0, 0.0)
+	port.set("show_recess", false)
+	var socket := _mesh_aabb_local("JackSerial")
+	var c := socket.get_center()
+	port.global_position = global_transform * Vector3(
+		c.x, c.y, socket.position.z - SERIAL_PROUD)
+	# Turned relative to the CONSOLE, not to the room. global_rotation here reads
+	# as "180 about the world's X" -- so a console standing at any angle other
+	# than dead ahead had its socket twisted off the panel, and a lead seated into
+	# it went in crooked. configure_av_ports sets rotation, not global_rotation,
+	# and has always been right for the same reason.
+	port.global_basis = global_transform.basis * Basis(Vector3(1.0, 0.0, 0.0), PI)
 
 
 func av_port_channels() -> Array:

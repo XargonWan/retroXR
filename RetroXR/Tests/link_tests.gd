@@ -1411,19 +1411,51 @@ func _test_psx_socket_is_in_the_panel() -> void:
 	# 32 mm further back than its shell does.
 	var panel_z: float = _panel_face_z(psx, psx.to_local(port.global_position))
 
-	# The recess, likewise. Its MOUTH is the end nearest the outside world, which
-	# is the most negative z of the two.
-	var ab := jack.get_aabb()
-	var c0: Vector3 = psx.to_local(jack.global_transform * ab.position)
-	var c1: Vector3 = psx.to_local(jack.global_transform * (ab.position + ab.size))
-	var mouth: float = minf(c0.z, c1.z)
-	var back: float = maxf(c0.z, c1.z)
+	# On a machine with a shell of its own the port draws NOTHING. The console
+	# moulds the socket and prints its name; the port's recess laid over that is a
+	# black box stuck on the back panel, and the plate over the print is a black
+	# rectangle. Both were shipped and both were reported.
+	_ok("a shelled console draws its own socket, not the port's",
+		not jack.is_visible_in_tree())
 
-	_ok("the mouth of the recess is level with the panel",
-		absf(mouth - panel_z) < 0.0005,
-		"mouth %.4f against panel %.4f" % [mouth, panel_z])
-	_ok("and the rest of it lies inside the console", back > panel_z,
-		"recess ends at %.4f, panel at %.4f" % [back, panel_z])
+	# Where it puts the SEAT is still its whole job, and the failure is invisible
+	# once nothing is drawn -- so measure it against the shell's own socket, which
+	# is the thing a plug has to go into.
+	var moulded := psx.find_child("JackSerial", true, false) as MeshInstance3D
+	_ok("the shell has the socket the seat is measured from", moulded != null)
+	if moulded != null:
+		var mb := moulded.get_aabb()
+		var m0: Vector3 = psx.to_local(moulded.global_transform * mb.position)
+		var m1: Vector3 = psx.to_local(moulded.global_transform * (mb.position + mb.size))
+		var face: float = minf(m0.z, m1.z)
+		_ok("and the seat is on its face, not out in the air",
+			absf(psx.to_local(port.global_position).z - face) < 0.002,
+			"seat %.4f against the socket face %.4f, panel %.4f"
+				% [psx.to_local(port.global_position).z, face, panel_z])
+		_ok("which is on the back panel, not behind the console",
+			face >= panel_z - 0.004,
+			"socket face %.4f against a panel at %.4f" % [face, panel_z])
+
+	# A console does not always stand square to the room, and it has to be turned
+	# BEFORE it is built: the socket is posed once, at spawn. Posed by world
+	# rotation it was twisted off the panel by however far the console faced away
+	# from dead ahead, and the seat -- and any lead in it -- went in crooked.
+	# Turning a console already standing proves nothing, because the port is a
+	# child and rides along either way.
+	var angled: Node3D = sys_scene.instantiate()
+	angled.systemid = "playstation"
+	angled.rotation = Vector3(0.0, deg_to_rad(37.0), 0.0)
+	add_child(angled)
+	for i in range(4):
+		await get_tree().process_frame
+	var turned: Node3D = angled.find_child("PsxLinkPort", true, false)
+	_ok("a console standing at an angle keeps its socket on its panel",
+		turned != null and turned.global_basis.z.normalized().dot(
+			-angled.global_basis.z.normalized()) > 0.999,
+		"socket +Z . panel normal = %.3f" % (turned.global_basis.z.normalized().dot(
+			-angled.global_basis.z.normalized()) if turned != null else 0.0))
+	angled.queue_free()
+	await get_tree().process_frame
 
 	# And a seated plug actually enters. A connector whose nose stops short of the
 	# panel is a connector resting against the outside of the console.
