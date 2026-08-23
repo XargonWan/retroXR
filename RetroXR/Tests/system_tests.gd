@@ -93,6 +93,7 @@ func _ready() -> void:
 	_test_pad_type_choice()
 	await _test_analog_mode_switch()
 	await _test_playstation_hardware()
+	await _test_power_led()
 	_test_libretro_port_routing()
 	_test_port_device_cache()
 	_test_cabinet_lookup()
@@ -1309,3 +1310,67 @@ func _test_memcard_presence() -> void:
 	nes.queue_free()
 	gc.queue_free()
 	psx.queue_free()
+
+
+# ── Power LED ─────────────────────────────────────────────────────────────────
+#
+# The lit lens and its companion glow, shared by RetroSystemModel since the NES
+# and the PlayStation each carried a line-for-line copy. Nothing tested either
+# copy, so a lens that never lit, or one left burning after power-off, would
+# have shipped -- and the two consoles drive theirs at different energies for a
+# measured reason, which is exactly the kind of constant a shared helper can
+# quietly flatten.
+
+func _test_power_led() -> void:
+	var sys_scene := load("res://Scenes/Objects/system.tscn") as PackedScene
+	if sys_scene == null:
+		return
+	for spec in [["playstation", 1.0], ["nes", 3.0]]:
+		var systemid: String = spec[0]
+		var want_energy: float = spec[1]
+		var sys: Node3D = sys_scene.instantiate()
+		sys.systemid = systemid
+		add_child(sys)
+		for i in range(20):
+			await get_tree().process_frame
+
+		var model: Node3D = sys.find_child("Shell", true, false)
+		model = model.get_parent() if model != null else null
+		if model == null or not model.has_method("set_power_light"):
+			sys.queue_free()
+			continue
+
+		var mats: Array = model.get("_power_light_mats")
+		_ok("led/%s has an emissive lens" % systemid, mats != null and mats.size() > 0,
+			"got %s" % ("null" if mats == null else str(mats.size())))
+		if mats == null or mats.is_empty():
+			sys.queue_free()
+			continue
+
+		var lens := mats[0] as StandardMaterial3D
+		var glow := model.get("_power_light_glow") as OmniLight3D
+
+		model.set_power_light(false)
+		_ok("led/%s is dark when off" % systemid,
+			is_equal_approx(lens.emission_energy_multiplier, 0.0),
+			str(lens.emission_energy_multiplier))
+		_ok("led/%s hides its glow when off" % systemid, glow == null or not glow.visible)
+
+		model.set_power_light(true)
+		# The energy is per console, not a shared constant: the NES's red lens
+		# needs 3.0 where the PlayStation's green needs 1.0 for the same apparent
+		# brightness. A helper that hard-coded one would light one of them wrong.
+		_ok("led/%s lights at its own energy" % systemid,
+			is_equal_approx(lens.emission_energy_multiplier, want_energy),
+			"got %.2f want %.2f" % [lens.emission_energy_multiplier, want_energy])
+		_ok("led/%s shows its glow when on" % systemid, glow != null and glow.visible)
+		# Emission colour is the lens's own, and must survive being driven.
+		_ok("led/%s keeps its emission colour" % systemid,
+			lens.emission_enabled and lens.emission.get_luminance() > 0.0,
+			str(lens.emission))
+
+		model.set_power_light(false)
+		_ok("led/%s goes dark again" % systemid,
+			is_equal_approx(lens.emission_energy_multiplier, 0.0))
+		sys.queue_free()
+		await get_tree().process_frame

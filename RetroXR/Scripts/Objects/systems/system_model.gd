@@ -652,3 +652,90 @@ func play_reset() -> void:
 ## this is reserved for future use (e.g. intercepting the drop earlier).
 func play_cartridge_eject(_cartridge: Node3D, _slot: Node3D) -> void:
 	pass
+
+
+# ── Power LED ─────────────────────────────────────────────────────────────────
+#
+# A lit lens plus a companion OmniLight3D, shared by the shells detailed enough
+# to have a real one. The NES and the PlayStation had a line-for-line copy each,
+# differing only in the emission colour and how hard the lens is driven.
+#
+# The light is a separate node rather than emission alone because an emissive
+# surface lights nothing around it: without the omni the lens glows and the
+# plastic beside it stays dark.
+
+## Shared by every shell with a lit lens. DECAY and RANGE are the falloff of a
+## few-millimetre source, and STANDOFF is how far in front of the lens the omni
+## sits. LED_ENERGY and the colour are NOT here: each console's lens is a
+## different brightness and hue, measured per shell.
+const LED_DECAY := 2.0
+const LED_RANGE := 0.45
+const LED_STANDOFF := 0.006
+
+var _power_light_mesh: MeshInstance3D = null
+var _power_light_mats: Array[StandardMaterial3D] = []
+var _power_light_glow: OmniLight3D = null
+var _power_light_energy := 1.0
+
+
+## Make the lens emissive and hang a glow in front of it. Call once, after
+## _power_light_mesh is resolved; set_power_light drives it afterwards.
+##
+## `emission` is the colour the lens itself radiates and `glow` what the omni
+## casts — related but not equal, since the lens reads brighter than the light it
+## throws. `lit_energy` is how hard the lens is driven when on: the NES's red
+## takes 3.0 where the PlayStation's green takes 1.0 for the same apparent
+## brightness, which is a luminance difference and not a tuning accident.
+func prep_power_light(emission: Color, glow: Color, glow_energy: float,
+		lit_energy: float) -> void:
+	if _power_light_mesh == null:
+		return
+	_power_light_energy = lit_energy
+	_power_light_mats.clear()
+	for s in range(_power_light_mesh.mesh.get_surface_count()):
+		var src := _power_light_mesh.get_active_material(s) as BaseMaterial3D
+		var m := StandardMaterial3D.new()
+		if src != null:
+			m.albedo_color = src.albedo_color
+		m.emission_enabled = true
+		m.emission = emission
+		m.emission_energy_multiplier = 0.0
+		_power_light_mesh.set_surface_override_material(s, m)
+		_power_light_mats.append(m)
+	_build_power_glow(glow, glow_energy)
+
+
+func _build_power_glow(glow: Color, glow_energy: float) -> void:
+	if _power_light_glow != null or _power_light_mesh == null:
+		return
+	_power_light_glow = OmniLight3D.new()
+	_power_light_glow.name = "PowerLightGlow"
+	_power_light_glow.add_to_group("no_shadow")
+	_power_light_glow.light_color = glow
+	_power_light_glow.light_energy = glow_energy
+	_power_light_glow.omni_range = LED_RANGE
+	_power_light_glow.omni_attenuation = LED_DECAY
+	# A point source millimetres from glossy ABS throws a specular highlight the
+	# real lens cannot. Its reflection comes from the emissive mesh instead.
+	_power_light_glow.light_specular = 0.0
+	_power_light_glow.shadow_enabled = false
+	_power_light_glow.distance_fade_enabled = true
+	_power_light_glow.distance_fade_begin = 3.0
+	_power_light_glow.distance_fade_length = 1.5
+	_power_light_glow.visible = false
+	add_child(_power_light_glow)
+	# Measured off the lens rather than quoted from the asset: _ready recentres
+	# the shell on its own footprint, so the GLB's coordinates are not this
+	# node's.
+	var to_model := global_transform.affine_inverse() * _power_light_mesh.global_transform
+	var lens: Vector3 = to_model * _power_light_mesh.get_aabb().get_center()
+	_power_light_glow.position = lens + Vector3(0.0, 0.0, LED_STANDOFF)
+
+
+func set_power_light(on: bool) -> void:
+	for m in _power_light_mats:
+		m.emission_energy_multiplier = _power_light_energy if on else 0.0
+	if _power_light_glow != null:
+		# Hidden rather than dimmed to zero: an energy-0 light is still a light
+		# the renderer culls and binds per object.
+		_power_light_glow.visible = on

@@ -101,9 +101,6 @@ var _ch_slider: VRSlider = null
 var _ch_knob: MeshInstance3D = null
 var _rf_channel: int = 3
 
-var _power_light_mesh: MeshInstance3D = null
-var _power_light_mats: Array[StandardMaterial3D] = []
-var _power_light_glow: OmniLight3D = null
 var _power_button: VRButton = null
 
 # Switch sounds, recorded off the real NES-001 with a contact mic on the shell
@@ -212,8 +209,8 @@ func _ready() -> void:
 
 	_power_light_mesh = _glb.find_child("PowerLight", true, false) as MeshInstance3D
 	if _power_light_mesh:
-		_prep_power_light()
-		_set_power_light(false)
+		prep_power_light(Color(1.0, 0.05, 0.0), LED_COLOR, LED_ENERGY, 3.0)
+		set_power_light(false)
 
 	_build_sfx()
 
@@ -341,10 +338,6 @@ func _process(_delta: float) -> void:
 
 # --- power LED ------------------------------------------------------------------
 
-## How far in front of the lens face the light source sits. Level with the lens
-## the pool is a hard dot; a few millimetres out it spreads across the front
-## panel the way the real one bleeds into the plastic around it.
-const LED_STANDOFF := 0.006
 ## Set from the PEAK value the light lays on the panel directly behind the lens:
 ## energy = peak * LED_STANDOFF^2. Godot attenuates a positional light as
 ##     (1 - (d/range)^4)^2 * d^(-decay)
@@ -361,87 +354,7 @@ const LED_STANDOFF := 0.006
 ## everything else below it. Past about 6 the panel clips white under FILMIC and
 ## blooms; under about 1.5 the machine stops reading as switched on.
 const LED_ENERGY := 0.000108
-## True inverse square. The pool has to FADE, and to fade at the rate the eye
-## expects of something this small and this close. A softer exponent stops the
-## pool being local at all and fogs the whole top deck.
-const LED_DECAY := 2.0
-## Purely where the light stops being evaluated -- with an inverse-square decay it
-## is the decay, not this, that shapes the pool. Set it tight and the range window
-## becomes a visible hard edge partway through the falloff, which is exactly what
-## 0.05 did here: every point inside it sat 5-14x over white, so the "pool" was a
-## saturated blob whose edge was the cutoff. By 0.45 m the LED puts under 4% of
-## the night ambient on the carpet, so culling it there costs nothing.
-const LED_RANGE := 0.45
 const LED_COLOR := Color(1.0, 0.09, 0.03)
-
-
-## Give the LED an emissive material so it glows red when the console is on and
-## reads as a dark unlit lens when off, instead of just toggling visibility.
-func _prep_power_light() -> void:
-	_power_light_mats.clear()
-	for s in range(_power_light_mesh.mesh.get_surface_count()):
-		var src := _power_light_mesh.get_active_material(s) as BaseMaterial3D
-		var m := StandardMaterial3D.new()
-		if src != null:
-			m.albedo_color = src.albedo_color
-		m.emission_enabled = true
-		m.emission = Color(1.0, 0.05, 0.0)
-		m.emission_energy_multiplier = 0.0
-		_power_light_mesh.set_surface_override_material(s, m)
-		_power_light_mats.append(m)
-	_build_power_glow()
-
-
-## A glowing lens is not the same as the LED lighting anything. This hangs a real
-## OmniLight3D just off the lens face, so a powered console lays a red pool on its
-## own front panel and on whatever it is standing on.
-##
-## OMNI rather than a forward SpotLight3D, which is what the TV's Ambilight uses
-## and what an LED behind a lens physically is. Rendered both: a cone aimed out of
-## the front face cannot light that face, because the two are coplanar, so it
-## loses the ring of glow around the lens -- the most recognisable thing about a
-## switched-on NES -- and leaves a disc of light on the floor a hand's width
-## ahead, attached to nothing. What the omni costs is that with no shadow map it
-## lights backwards through the shell too; at this intensity that reaches the
-## carpet behind the machine at under a tenth of the night ambient, in the red
-## channel only, which is below noticing.
-##
-## Shadows are off (the "no_shadow" group, which QualityManager honours): the
-## source sits millimetres from the panel it lights, where a shadow map buys
-## nothing but acne, and a hallway of consoles would each want an atlas slot. The
-## distance fade drops it out entirely past 4.5 m for the same reason -- the
-## whole pool is a couple of pixels by then.
-func _build_power_glow() -> void:
-	_power_light_glow = OmniLight3D.new()
-	_power_light_glow.name = "PowerLightGlow"
-	_power_light_glow.add_to_group("no_shadow")
-	_power_light_glow.light_color = LED_COLOR
-	_power_light_glow.light_energy = LED_ENERGY
-	_power_light_glow.omni_range = LED_RANGE
-	_power_light_glow.omni_attenuation = LED_DECAY
-	# A point source millimetres from glossy ABS throws a specular highlight the
-	# real lens cannot. Its reflection comes from the emissive mesh instead.
-	_power_light_glow.light_specular = 0.0
-	_power_light_glow.shadow_enabled = false
-	_power_light_glow.distance_fade_enabled = true
-	_power_light_glow.distance_fade_begin = 3.0
-	_power_light_glow.distance_fade_length = 1.5
-	_power_light_glow.visible = false
-	add_child(_power_light_glow)
-	# Measured off the lens rather than quoted from the asset: the shell is
-	# recentred on load, so the GLB's own coordinates are not this node's.
-	var to_model := global_transform.affine_inverse() * _power_light_mesh.global_transform
-	var lens := to_model * _power_light_mesh.get_aabb().get_center()
-	_power_light_glow.position = lens + Vector3(0.0, 0.0, LED_STANDOFF)
-
-
-func _set_power_light(on: bool) -> void:
-	for m in _power_light_mats:
-		m.emission_energy_multiplier = 3.0 if on else 0.0
-	if _power_light_glow != null:
-		# Hidden rather than dimmed to zero: an energy-0 light is still a light
-		# the renderer culls and binds per object.
-		_power_light_glow.visible = on
 
 
 func _model_aabb(inst: Node3D) -> AABB:
@@ -1280,14 +1193,14 @@ func on_power_on() -> void:
 	# the machine, and nothing has physically moved. _on_power_button_pressed is
 	# what a finger sounds like.
 	_power_in = true
-	_set_power_light(true)
+	set_power_light(true)
 
 
 func on_power_off() -> void:
 	if _power_button:
 		_power_button.set_latched_pressed(false)
 	_power_in = false
-	_set_power_light(false)
+	set_power_light(false)
 
 
 # --- collision ------------------------------------------------------------------

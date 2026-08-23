@@ -42,9 +42,6 @@ var _glb: Node3D = null
 var _power_button: VRButton = null
 var _open_button: VRButton = null
 
-var _power_light_mesh: MeshInstance3D = null
-var _power_light_mats: Array[StandardMaterial3D] = []
-var _power_light_glow: OmniLight3D = null
 
 # Lid. `_lid` is the shell's own node (its origin is the hinge); `_lid_driver` is
 # the hidden frame the VRHinge actually turns — see _setup_lid.
@@ -98,8 +95,8 @@ func _ready() -> void:
 
 	_power_light_mesh = _shell_mesh("PowerLight")
 	if _power_light_mesh != null:
-		_prep_power_light()
-		_set_power_light(false)
+		prep_power_light(Color(0.1, 1.0, 0.2), LED_COLOR, LED_ENERGY, 1.0)
+		set_power_light(false)
 
 
 func _model_aabb(inst: Node3D) -> AABB:
@@ -180,22 +177,7 @@ func has_eject_button() -> bool:
 
 # --- power LED --------------------------------------------------------------
 
-## nes_model's METHOD — peak on the panel behind the lens, energy solved back out
-## as peak * LED_STANDOFF^2 — but deliberately not its energy.
-##
-## Matching the NES on raw linear peak puts this lamp 2.7x brighter to the eye.
-## Rec.709 weights green 0.7152 against red 0.2126, so LED_COLOR here is luminance
-## 0.765 where the NES's is 0.279, and a millicandela figure is luminance-weighted
-## already. Peaks are only comparable between the two after that weighting.
-##
-## Peak 0.8 raw, i.e. 0.61 luminance against the NES's 0.84. Deliberately UNDER
-## rather than level: this lens sits at the top-front corner and spills onto a
-## large, light-grey top deck, where the NES's is recessed in a darker vertical
-## panel that catches far less.
-const LED_STANDOFF := 0.006
 const LED_ENERGY := 0.0000288
-const LED_DECAY := 2.0
-const LED_RANGE := 0.45
 
 ## Green, where the NES is red. Taken from the ASSET rather than from a
 ## photograph: the shell's own material for this lens is a dark green
@@ -203,77 +185,6 @@ const LED_RANGE := 0.45
 ## this file already drove was green to match. Changing the hue here would put
 ## the lit state at odds with the unlit one the artist modelled.
 const LED_COLOR := Color(0.15, 1.0, 0.25)
-
-
-## Give the LED an emissive material so it reads as lit rather than just visible.
-## The shell's own material for it is a dark green (0, 0.133, 0) — an unlit lens —
-## which is exactly the "off" state, so the albedo is kept and only the emission
-## is driven.
-func _prep_power_light() -> void:
-	_power_light_mats.clear()
-	for s in range(_power_light_mesh.mesh.get_surface_count()):
-		var src := _power_light_mesh.get_active_material(s) as BaseMaterial3D
-		var m := StandardMaterial3D.new()
-		if src != null:
-			m.albedo_color = src.albedo_color
-		m.emission_enabled = true
-		m.emission = Color(0.1, 1.0, 0.2)
-		m.emission_energy_multiplier = 0.0
-		_power_light_mesh.set_surface_override_material(s, m)
-		_power_light_mats.append(m)
-	_build_power_glow()
-
-
-## A glowing lens is not the same as the LED lighting anything. Same reasoning as
-## the NES's, and the same shape of answer: an OMNI just off the lens face, not a
-## forward spot. A cone aimed out of the front panel cannot light that panel --
-## the two are coplanar -- so it loses the ring of glow around the lens, which is
-## the recognisable part, and leaves a disc on the floor attached to nothing.
-##
-## Standoff along +Z because that is the face this lens sits in: the shell puts it
-## at z 88.06..92.35 against a front panel at 93.35, so it is a millimetre inside
-## the front, not on the top deck beside the POWER cap where the printed legend
-## might suggest.
-##
-## Shadows off and in the "no_shadow" group QualityManager honours, for the NES's
-## reason: the source is millimetres from the surface it lights, where a shadow
-## map buys acne and an atlas slot per console in a hallway of them.
-func _build_power_glow() -> void:
-	if _power_light_glow != null or _power_light_mesh == null:
-		return
-	_power_light_glow = OmniLight3D.new()
-	_power_light_glow.name = "PowerLightGlow"
-	_power_light_glow.add_to_group("no_shadow")
-	_power_light_glow.light_color = LED_COLOR
-	_power_light_glow.light_energy = LED_ENERGY
-	_power_light_glow.omni_range = LED_RANGE
-	_power_light_glow.omni_attenuation = LED_DECAY
-	# A point source millimetres from glossy ABS throws a specular highlight the
-	# real lens cannot. Its reflection comes from the emissive mesh instead.
-	_power_light_glow.light_specular = 0.0
-	_power_light_glow.shadow_enabled = false
-	_power_light_glow.distance_fade_enabled = true
-	_power_light_glow.distance_fade_begin = 3.0
-	_power_light_glow.distance_fade_length = 1.5
-	_power_light_glow.visible = false
-	add_child(_power_light_glow)
-	# Measured off the lens, not quoted: _ready recentres the shell on its own
-	# footprint, so the GLB's coordinates are not this node's.
-	var to_model := global_transform.affine_inverse() * _power_light_mesh.global_transform
-	var lens: Vector3 = to_model * _power_light_mesh.get_aabb().get_center()
-	_power_light_glow.position = lens + Vector3(0.0, 0.0, LED_STANDOFF)
-
-
-func _set_power_light(on: bool) -> void:
-	for m in _power_light_mats:
-		# 1.0, not the NES's 3.0, on the same green weighting as LED_ENERGY: this
-		# emission colour at 3.0 is luminance 2.25, against 0.745 for the NES's lit
-		# lens and 0.757 for the DualShock's.
-		m.emission_energy_multiplier = 1.0 if on else 0.0
-	if _power_light_glow != null:
-		# Hidden rather than dimmed to zero: an energy-0 light is still a light
-		# the renderer culls and binds per object.
-		_power_light_glow.visible = on
 
 
 # --- buttons ----------------------------------------------------------------
@@ -316,14 +227,14 @@ func on_power_on() -> void:
 	super()
 	if _power_button != null:
 		_power_button.set_latched_pressed(true)
-	_set_power_light(true)
+	set_power_light(true)
 
 
 func on_power_off() -> void:
 	super()
 	if _power_button != null:
 		_power_button.set_latched_pressed(false)
-	_set_power_light(false)
+	set_power_light(false)
 
 
 # --- disc lid ---------------------------------------------------------------
