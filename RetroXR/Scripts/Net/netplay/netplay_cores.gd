@@ -98,7 +98,8 @@ const CORES: Dictionary = {
 	"pcsx_rearmed": {
 		"verified": true,
 		"state_transfer": false,
-		"rollback": false,
+		"strategies": [Strategy.DETERMINISM],
+		"cross_play": false,
 		"systems": ["playstation"],
 		"options": {},
 	},
