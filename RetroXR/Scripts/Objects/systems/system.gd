@@ -803,6 +803,7 @@ func _load_system_model() -> void:
 	# bay above and either would win over the restored pose.
 	if _lid_angle_from_save >= 0.0:
 		_model.set_lid_angle_deg(_lid_angle_from_save)
+		_restore_tray_open()
 
 
 ## A handheld routes the trigger and thumbstick into the emulated pad, leaving
@@ -833,6 +834,29 @@ func get_lid_angle_deg() -> float:
 func set_lid_angle_deg(open_deg: float) -> void:
 	if _model != null:
 		_model.set_lid_angle_deg(open_deg)
+		_restore_tray_open()
+
+
+## Carry a restored lid pose into the MACHINE, which is a separate thing from the
+## shell the pose just moved.
+##
+## set_lid_angle_deg only moves the mesh and the model's own zone gate. A tray
+## console's open state lives in two more places — RetroSystem._tray_open and
+## MediaTray._open — and both start shut, so a room saved with the lid up came
+## back with the lid drawn open over a machine that believed it was closed. The
+## PlayStation's well then took a disc (the model had enabled the zone) and
+## MediaTray immediately sealed it in: ungrabbable, and the core never heard the
+## tray cycle, so the game never saw the disc that was visibly sitting in it.
+##
+## Idempotent, and a no-op on anything but a tray console — which is why the
+## NES's flap, whose own set_lid_angle_deg already gates its bay, passes through
+## here unchanged.
+func _restore_tray_open() -> void:
+	if _model == null or _disc_loader != MediaDimensions.LOADER_TRAY:
+		return
+	var open: bool = _model.is_lid_open()
+	if open != _tray_open:
+		_set_tray_open(open, true)
 
 
 ## Enable or disable libretro input polling for this system.
@@ -3756,12 +3780,17 @@ func _request_tray_state(open: bool) -> void:
 ## seated disc can only be grabbed out while open (no reaching through the lid).
 ## The spin ramp follows via _update_disc_spin. Netplay applies remote toggles
 ## through net_set_tray_open below.
-func _set_tray_open(open: bool) -> void:
+##
+## `restoring` is a load re-entering a state the room was already in: the shell
+## has just been posed by set_lid_angle_deg, so nothing animates and the model is
+## not asked to play the swing again — but every gate is applied exactly as a
+## press would, which is the whole reason a restore comes through here at all.
+func _set_tray_open(open: bool, restoring: bool = false) -> void:
 	_tray_open = open
 	# MediaTray gates the well (accepts a disc only while open + empty), makes a
 	# seated disc grabbable only while open, and swings the procedural lid pivot.
 	if _tray:
-		_tray.set_open(open)
+		_tray.set_open(open, not restoring)
 	# Latch the OPEN button down to show "tray open" — except on a spring lid, whose
 	# button is a momentary latch release (holding it down would advertise a second
 	# press that deliberately does nothing).
@@ -3775,11 +3804,14 @@ func _set_tray_open(open: bool) -> void:
 			else:
 				_disc_bay.lid_hinge.latch_closed()
 		_disc_bay.slide(open)
-	# Bespoke GLB tray models animate their own lid here.
-	if open:
-		_model.play_open()
-	else:
-		_model.play_close()
+	# Bespoke GLB tray models animate their own lid here. Skipped on a restore,
+	# where set_lid_angle_deg has already put the shell exactly where the save
+	# says it was — playing the swing would tween it there from wherever it is.
+	if not restoring:
+		if open:
+			_model.play_open()
+		else:
+			_model.play_close()
 	_sync_core_tray()
 
 
@@ -3839,12 +3871,45 @@ static func _tray_op_for(open: bool, core_ejected: bool, has_disc: bool) -> int:
 
 
 
-## The hand pushed the lid home — mark the tray shut, as the PSP's UMD door does.
-## request_tray_state is idempotent, so the echo from latch_closed() stops here
-## rather than bouncing back into the hinge.
+## The lid moved under its own mechanism — mark the tray as wherever it now
+## stands, as the PSP's UMD door does.
+##
+## BOTH directions, and that is the fix. This used to report only the latch
+## clicking SHUT, because in play the only way a lid opens is the OPEN button,
+## which reports for itself. A restore does not press that button:
+## ScenePersistence reapplies the saved angle and latch straight onto the
+## mechanism, so a room saved with the lid up came back with the lid standing
+## open over a machine that still believed it was shut — and its bay refused
+## every disc until the lid was pushed home and opened again.
+##
+## request_tray_state is idempotent, so the echo from an OPEN press or from
+## latch_closed() stops here rather than bouncing back into the hinge. While a
+## remote update or a restore is being APPLIED the state is set without being
+## reported, which is the rule _sync_core_tray already follows — a hook that
+## re-reports what it was just told starts a round trip.
 func _on_lid_swung(_deg: float) -> void:
-	if _disc_bay != null and _disc_bay.lid_hinge != null 			and _disc_bay.lid_hinge.is_latched_closed():
-		request_tray_state(false)
+	if _disc_bay == null or _disc_bay.lid_hinge == null:
+		return
+	_lid_reports(not _disc_bay.lid_hinge.is_latched_closed(),
+		_disc_bay.lid_hinge)
+
+
+## A lid mechanism reporting its own state. Public because a bespoke model owns
+## its hinge and reports through here rather than growing a second copy of the
+## rule (see playstation_model._on_lid_swung).
+func lid_reports_open(open: bool, mechanism: Node) -> void:
+	_lid_reports(open, mechanism)
+
+
+func _lid_reports(open: bool, mechanism: Node) -> void:
+	if _disc_loader != MediaDimensions.LOADER_TRAY or open == _tray_open:
+		return
+	var applying: bool = NetworkManager.is_event_applying() \
+		or (mechanism != null and mechanism.has_meta("net_restore_in_progress"))
+	if applying:
+		_set_tray_open(open, true)
+	else:
+		_request_tray_state(open)
 
 
 ## Netplay: another player toggled this console's tray.

@@ -121,10 +121,15 @@ func toggle_open() -> void:
 
 ## Open or close the lid: gates the well's snap zone and the disc's grabbability
 ## (both only while open) and animates the lid mesh.
-func set_open(open: bool) -> void:
+##
+## `animate` is false for a RESTORE, which is a state the room was already in
+## rather than something the player just did — the same rule the models'
+## set_lid_angle_deg follows. Everything else here still happens: the gates are
+## the point, and they are what a restored lid used to be missing.
+func set_open(open: bool, animate: bool = true) -> void:
 	if open == _open:
 		return
-	_apply_open(open, true)
+	_apply_open(open, animate)
 
 
 func _apply_open(open: bool, animate: bool) -> void:

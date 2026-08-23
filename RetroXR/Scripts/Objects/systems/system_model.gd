@@ -288,6 +288,19 @@ func set_lid_angle_deg(_open_deg: float) -> void:
 	pass
 
 
+## Whether the lid this model just posed counts as OPEN — the machine's own
+## question, not the mesh's. RetroSystem asks it after restoring a saved angle,
+## because the pose alone tells nobody whether the bay should be accepting media.
+##
+## The default reads the reported angle, which is right for anything that keeps
+## no separate open/shut state; a model that has one (the PlayStation lid)
+## overrides this so its own half-way rule stays the only rule.
+##
+## Only asked of a LOADER_TRAY console, so a cartridge flap never reaches here.
+func is_lid_open() -> bool:
+	return get_lid_angle_deg() > 0.0
+
+
 ## Reposition one memory-card snap zone onto the model's physical card slot.
 ## `index` is the slot, 0-based, in the same order card_slot_count() counts them.
 ##

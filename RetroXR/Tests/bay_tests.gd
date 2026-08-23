@@ -15,6 +15,7 @@
 ##   tray/    the NES ZIF cradle: up, pushed home, lifted, and who is connected
 ##   plug/    a controller plug offered off its socket and slid in
 ##   restore/ a save comes back latched, without the slide
+##   lid/     a room saved with a disc lid UP comes back with the machine agreeing
 ##   other/   a deck with no push tray is untouched by any of it
 extends Node
 
@@ -609,6 +610,26 @@ func _group_restore() -> void:
 		"restore/a restored cart does not slide in")
 	_check(sys._model.is_tray_down(), "restore/it comes back with the tray home")
 	_check(sys._snapped_cartridge == cart, "restore/and the machine reading it")
+
+	# The cradle is ALSO persisted as an articulated control, and that half of the
+	# reload runs before the media half — outside _restoring_media, writing the
+	# latch back with the same rotation_changed a push emits. Driven through the
+	# real ScenePersistence calls, on the real record, because the shape of that
+	# record is what decides whether the latch comes back at all.
+	var persistence := ScenePersistence.new()
+	var records: Array = persistence._serialize_articulated_controls(sys)
+	sys._model.lift_tray()
+	await _wait(30)
+	_check(not sys._model.is_tray_down(), "restore/the tray lifts before the reload")
+	# Without a bank there is nothing to catch playing and the case below is green
+	# whatever the model does, so say so here rather than let it pass silently.
+	_check(not sys._model._sfx_tray_down.is_empty(),
+		"restore/the cradle has a tray sound that could be heard")
+	sys._model._sfx_last.erase("tray")
+	persistence._restore_articulated_controls(sys, records)
+	_check(sys._model.is_tray_down(), "restore/a saved cradle comes back latched")
+	_check(not sys._model._sfx_last.has("tray"),
+		"restore/and lands without clicking the tray shut")
 	await _clear()
 
 
@@ -630,6 +651,95 @@ func _group_other() -> void:
 	await _clear()
 
 
+# --- lid ------------------------------------------------------------------------
+
+## A room saved with a disc lid standing open has to come back with the MACHINE
+## open too, not just the shell. The lid pose and the machine's tray state are
+## separate things and each console carries the pose home by its own route: a
+## procedural spring lid (GameCube, Dreamcast) rides the saved hinge angle and
+## latch, the PlayStation's bespoke lid rides the saved lid_angle. Both used to
+## arrive with the lid drawn open over a machine that still believed it was shut,
+## and its bay then refused every disc until the lid was pushed home and reopened.
+##
+## Its own throwaway room id, so the player's arcade slot is never touched.
+const LID_ROOM := "__bay_tests_lid"
+const LID_SLOT := "lid"
+
+
+func _saved_lid_room(model_id: String, systemid: String) -> Node3D:
+	var sp := ScenePersistence.new(LID_ROOM)
+	var sys := await _console(model_id, systemid)
+	sys._on_eject_pressed()
+	await _wait(80)
+	sp.save_slot(self, LID_SLOT)
+	ScenePersistence.flush_pending_writes()
+	await _wait(10)
+	sp.load_slot_async(self, LID_SLOT)
+	await _wait(150)
+	# The console the load built, not the one that was saved.
+	for n in get_tree().get_nodes_in_group("spawned"):
+		if n is RetroSystem:
+			_spawned.append(n)
+			return n
+	return null
+
+
+func _drop_lid_room() -> void:
+	var dir := "user://scenes/%s" % LID_ROOM
+	var d := DirAccess.open(dir)
+	if d != null:
+		for f in d.get_files():
+			d.remove(f)
+	var rooms := DirAccess.open("user://scenes")
+	if rooms != null:
+		rooms.remove(LID_ROOM)
+
+
+func _group_lid() -> void:
+	# A procedural spring lid: the saved HINGE carries the pose home.
+	var gc := await _saved_lid_room("gamecube_primitive", "gamecube")
+	_check(gc != null, "lid/the saved room comes back")
+	if gc != null:
+		_check(gc._disc_bay.lid_hinge.get_rotation_deg() > 1.0,
+			"lid/a spring lid comes back standing open")
+		_check(gc._tray_open, "lid/and the machine says it is open")
+		_check(gc._tray.is_open(), "lid/so does the well")
+		_check((gc.get_node("CartridgeSlot") as XRToolsSnapZone).enabled,
+			"lid/which is what lets a disc go in")
+	await _clear()
+
+	# A bespoke lid: the saved lid_angle carries the pose home instead.
+	var ps := await _saved_lid_room("playstation", "playstation")
+	if ps != null:
+		_check(ps.get_lid_angle_deg() > 1.0,
+			"lid/a bespoke lid comes back standing open")
+		_check(ps._tray_open, "lid/and that machine says it is open too")
+		_check(ps._tray.is_open(), "lid/well included")
+	await _clear()
+
+	# The control. Without it every check above passes on a machine that simply
+	# always reports open, which would be a worse bug than the one being tested.
+	var sp := ScenePersistence.new(LID_ROOM)
+	var shut := await _console("gamecube_primitive", "gamecube")
+	sp.save_slot(self, LID_SLOT)
+	ScenePersistence.flush_pending_writes()
+	await _wait(10)
+	sp.load_slot_async(self, LID_SLOT)
+	await _wait(150)
+	var back: Node3D = null
+	for n in get_tree().get_nodes_in_group("spawned"):
+		if n is RetroSystem:
+			back = n
+			_spawned.append(n)
+			break
+	if back != null:
+		_check(not back._tray_open, "lid/a lid saved SHUT comes back shut")
+		_check(not (back.get_node("CartridgeSlot") as XRToolsSnapZone).enabled,
+			"lid/with its bay closed")
+	await _clear()
+	_drop_lid_room()
+
+
 func _run() -> void:
 	if _want("perch"):
 		await _group_perch()
@@ -639,5 +749,7 @@ func _run() -> void:
 		await _group_plug()
 	if _want("restore"):
 		await _group_restore()
+	if _want("lid"):
+		await _group_lid()
 	if _want("other"):
 		await _group_other()

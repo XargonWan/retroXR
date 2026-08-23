@@ -423,10 +423,14 @@ func _on_lid_swung(deg: float) -> void:
 	_set_lid(deg / _LID_OPEN_DEG)
 	if _disc_slot != null:
 		_disc_slot.enabled = _lid_amount > 0.5
-	if _lid_hinge != null and _lid_hinge.is_latched_closed():
+	# Both directions. Reporting only the latch clicking shut was enough while the
+	# only way this lid opened was the OPEN button, which reports for itself — but
+	# a restore reapplies the saved angle and latch straight onto the hinge, and
+	# the machine heard nothing. See RetroSystem._on_lid_swung.
+	if _lid_hinge != null:
 		var host := get_parent()
-		if host != null and host.has_method("request_tray_state"):
-			host.request_tray_state(false)
+		if host != null and host.has_method("lid_reports_open"):
+			host.lid_reports_open(not _lid_hinge.is_latched_closed(), _lid_hinge)
 
 
 func has_spring_latched_lid() -> bool:
@@ -465,6 +469,12 @@ func set_lid_angle_deg(open_deg: float) -> void:
 		_lid_hinge.set_rotation_deg_no_signal(_LID_OPEN_DEG * amount)
 	if _disc_slot != null:
 		_disc_slot.enabled = amount > 0.5
+
+
+## The same half-way rule set_lid_angle_deg gates the well on, so the machine
+## and the shell cannot disagree about a restored lid.
+func is_lid_open() -> bool:
+	return _lid_amount > 0.5
 
 
 # --- disc -------------------------------------------------------------------
