@@ -1200,8 +1200,16 @@ func _test_avatars(p: Pair) -> void:
 	p.client_nm.pose_source = func() -> PackedFloat32Array: return client_pose
 	var host_view := p.host_nm._avatars[p.client_id] as RemoteAvatar
 	var client_view := p.client_nm._avatars[1] as RemoteAvatar
+	# 1200 ticks, not the default 300, because _until counts FRAMES and this waits
+	# on a clock. Poses go out every POSE_INTERVAL (20 Hz) over an
+	# unreliable_ordered channel, and the host's own view needs two hops -- the
+	# client's report, then the host's next broadcast. Headless frames run about
+	# 1-3 ms, so 300 of them is roughly half a second, i.e. ten sends, and a
+	# couple of dropped packets on an unreliable channel used up the whole budget.
+	# Measured: a successful wait takes 110-330 ms, so this is several times the
+	# real settling time rather than a number picked to make red go away.
 	_ok(await _until(func() -> bool:
-		return host_view._buf.size() > 0 and client_view._buf.size() > 0, 300),
+		return host_view._buf.size() > 0 and client_view._buf.size() > 0, 1200),
 		"avatars/head and hand pose packets travel in both directions")
 	# Wait for the poses to be APPLIED, not for a fixed ten frames. A packet
 	# landing in _buf is not the same event as the avatar consuming it, and
