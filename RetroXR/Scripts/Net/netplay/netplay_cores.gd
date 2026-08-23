@@ -51,6 +51,13 @@ const CORES: Dictionary = {
 		"systems": ["megadrive", "genesis"],
 		"options": {},
 	},
+	"pcsx_rearmed": {
+		"verified": true,
+		"state_transfer": false,
+		"rollback": false,
+		"systems": ["playstation"],
+		"options": {},
+	},
 }
 
 

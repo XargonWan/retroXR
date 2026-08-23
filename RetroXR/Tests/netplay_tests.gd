@@ -138,6 +138,14 @@ func _test_cores() -> void:
 		"cores/because netplay forces its frame pacing off")
 	_ok(NetplayCores.state_transfer_capable("fceumm"),
 		"cores/fceumm can do both")
+	# pcsx_rearmed is the live example of the split now that gambatte has been
+	# fixed: it reproduces exactly from a cold start across two processes and
+	# fails 8 of 20 checkpoints after reloading its own state, so a session
+	# plays and a late join must not be offered.
+	_ok(NetplayCores.is_capable("pcsx_rearmed"),
+		"cores/pcsx_rearmed can hold a session")
+	_ok(not NetplayCores.state_transfer_capable("pcsx_rearmed"),
+		"cores/but cannot put a state on the wire")
 	_ok(not NetplayCores.state_transfer_capable("__never_vetted"),
 		"cores/an unvetted core can do neither")
 	_ok(not NetplayCores.state_transfer_capable("nonesuch"),
