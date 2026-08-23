@@ -448,11 +448,17 @@ func _collect_fixtures(root: Node) -> Array[Dictionary]:
 			continue
 		var pos := n3d.global_position
 		var rot := n3d.global_rotation_degrees
-		out.append({
+		var record := {
 			"path": str(root.get_path_to(n3d)),
 			"position": [pos.x, pos.y, pos.z],
 			"rotation": [rot.x, rot.y, rot.z],
-		})
+		}
+		# The set's selected input. A spawned television carries its whole control
+		# state in its object entry; a fixture has no entry to carry one, so the
+		# arcade's own set came back on Composite 1 however it was left.
+		if n3d is RetroTV:
+			record["source"] = (n3d as RetroTV).current_source
+		out.append(record)
 	return out
 
 
@@ -476,6 +482,13 @@ func _restore_fixtures(root: Node, fixtures: Variant) -> void:
 			n3d.global_position = Vector3(pos[0], pos[1], pos[2])
 		if rot.size() == 3:
 			n3d.global_rotation_degrees = Vector3(rot[0], rot[1], rot[2])
+		# Absent from a slot written before a set remembered its input, and from
+		# every fixture that is furniture rather than a television. set_source
+		# clamps and falls back on its own, so a cabinet that no longer carries
+		# the saved input lands on one it does have.
+		var source: Variant = d.get("source")
+		if n3d is RetroTV and (source is float or source is int):
+			(n3d as RetroTV).set_source(int(source))
 
 
 func _encode(snapshot: Dictionary) -> String:

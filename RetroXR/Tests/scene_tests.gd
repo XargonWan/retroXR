@@ -468,6 +468,42 @@ func _test_fixture() -> void:
 	sp._restore_fixtures(self, [{"path": "NoSuchNode", "position": [0, 0, 0]}])
 	_ok(true, "fixture/a missing fixture is skipped")
 
+	# A television is the one fixture with state of its own. A spawned set carries
+	# its whole control state in its object entry; a fixture has no entry, so the
+	# arcade's own set used to come back on Composite 1 however it was left.
+	var set_tv := preload("res://Scenes/Objects/tv.tscn").instantiate() as RetroTV
+	set_tv.name = "FixtureTV"
+	set_tv.freeze = true
+	add_child(set_tv)
+	set_tv.add_to_group("fixture")
+	set_tv.set_source(RetroTV.Source.COMPOSITE_3)
+	var tv_fx: Array = sp._snapshot(self).get("fixtures", [])
+	var set_rec := {}
+	for entry: Variant in tv_fx:
+		if str((entry as Dictionary).get("path", "")) == "FixtureTV":
+			set_rec = entry as Dictionary
+	_eq(int(set_rec.get("source", -1)), int(RetroTV.Source.COMPOSITE_3),
+		"fixture/a set records the input it is on")
+	set_tv.set_source(RetroTV.Source.COMPOSITE_1)
+	sp._restore_fixtures(self, [set_rec])
+	_eq(set_tv.current_source, int(RetroTV.Source.COMPOSITE_3),
+		"fixture/a set goes back to the input it was on")
+	# A slot written before this, and a fixture that is furniture rather than a
+	# set: neither carries the key, and neither may be touched by the restore.
+	sp._restore_fixtures(self, [{"path": "FixtureTV", "position": [0, 0, 0]}])
+	_eq(set_tv.current_source, int(RetroTV.Source.COMPOSITE_3),
+		"fixture/an old slot leaves the input alone")
+	# The saved input can be one this cabinet does not carry — a set the player has
+	# since re-shelled. set_source falls back rather than blanking the glass.
+	# 99 clamps to VGA, which the stock body does not carry (only the monitor shell
+	# seats that socket), so the fallback has something to do here.
+	set_tv.set_source(RetroTV.Source.COMPOSITE_3)
+	sp._restore_fixtures(self, [{"path": "FixtureTV", "source": 99}])
+	_eq(set_tv.current_source, int(RetroTV.Source.COMPOSITE_1),
+		"fixture/an input this cabinet lacks falls back")
+	set_tv.remove_from_group("fixture")
+	set_tv.queue_free()
+
 	# A room with no fixtures writes no section, so those slots are byte-identical
 	# to what this build wrote before fixtures existed.
 	tv.remove_from_group("fixture")
