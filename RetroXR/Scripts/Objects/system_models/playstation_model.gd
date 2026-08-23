@@ -638,13 +638,6 @@ func configure_controller_ports(port_zones: Array) -> void:
 	hide_port_placeholders(port_zones)
 
 
-## Where a seated plug actually sits, before the grab-point flip. Kept separate
-## from the zone so the two cannot drift.
-func port_plug_transform(index: int) -> Transform3D:
-	var name := "Port%d" % (clampi(index, 0, 1) + 1)
-	return Transform3D(Basis.IDENTITY, _mesh_center_local(name))
-
-
 ## The cabinet wires one card slot; use port 1's, the upper of the two openings
 ## on the left half of the front face.
 ##

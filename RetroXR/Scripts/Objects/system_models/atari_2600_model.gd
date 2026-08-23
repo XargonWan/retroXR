@@ -370,15 +370,6 @@ func configure_controller_ports(port_zones: Array) -> void:
 	hide_port_placeholders(port_zones)
 
 
-## Where each controller plug should sit once seated — the pose that was actually
-## placed, before the grab-point flip. Used by the probe and by validation.
-func port_plug_transform(index: int) -> Transform3D:
-	var i: int = clampi(index, 0, _PORT_POS.size() - 1)
-	return Transform3D(
-		Basis.from_euler(Vector3(deg_to_rad(_PORT_PITCH_DEG), 0.0, 0.0)),
-		_PORT_POS[i])
-
-
 # --- A/V lead ---------------------------------------------------------------------
 
 ## The yellow composite VIDEO jack on the rear panel, measured off the shell.

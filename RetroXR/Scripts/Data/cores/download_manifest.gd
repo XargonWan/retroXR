@@ -73,11 +73,6 @@ func get_remote_date(core_name: String) -> String:
 	return _cores().get(core_name, {}).get("remote_date", "")
 
 
-## Returns the downloaded_at ISO timestamp string, or "" if not downloaded.
-func get_downloaded_at(core_name: String) -> String:
-	return _cores().get(core_name, {}).get("downloaded_at", "")
-
-
 # ---------------------------------------------------------------------------
 # Mutations
 # ---------------------------------------------------------------------------

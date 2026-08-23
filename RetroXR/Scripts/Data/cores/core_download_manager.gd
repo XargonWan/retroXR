@@ -22,9 +22,6 @@ static func _buildbot_url() -> String:
 		return "https://buildbot.libretro.com/nightly/apple/osx/%s/latest/" % arch
 	return "https://buildbot.libretro.com/nightly/windows/x86_64/latest/"
 
-static func _core_lib_suffix() -> String:
-	return core_lib_suffixes()[0]
-
 
 ## Library-name suffixes this platform may see, canonical first.
 ## Android cores are conventionally "<core>_libretro_android.so", but that infix

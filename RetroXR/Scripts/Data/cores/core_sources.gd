@@ -169,20 +169,6 @@ static func version_of(core_name: String) -> String:
 	return str(src.get("known_tag", ""))
 
 
-static func label_for(core_name: String) -> String:
-	var src: Dictionary = SOURCES.get(core_name, {})
-	return str(src.get("label", ""))
-
-
-## The human-readable page, for a player who wants to see what they are about to
-## install before they install it. Also the `latest` form, for the same reason.
-static func release_page(core_name: String) -> String:
-	var src: Dictionary = SOURCES.get(core_name, {})
-	if src.is_empty():
-		return ""
-	return "https://github.com/%s/releases/latest" % src.get("repo", "")
-
-
 ## Core names we publish AND build for this platform, for callers that need to
 ## walk them (the version probe).
 static func active_core_names() -> Array[String]:

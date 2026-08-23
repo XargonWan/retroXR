@@ -3,11 +3,6 @@ class_name RetroTV
 extends XRToolsPickable
 
 
-## Emitted when a cable plug connects to this TV's composite port
-signal cable_connected(plug)
-
-## Emitted when the cable plug disconnects
-signal cable_disconnected
 
 
 const CRT_SHADER := preload("res://Shaders/crt_effect.gdshader")
@@ -57,8 +52,6 @@ const RF_CHANNELS := [3, 4]
 ## that is printing rather than shouting. Fed to AvLegend.title.
 const AV_INPUT_NAMES := ["Composite 1", "Composite 2", "Composite 3", "Composite 4"]
 
-## Emitted when the selected source changes, so panels can follow.
-signal source_changed(source: int)
 
 ## CRT display filter (curvature, scanlines, aperture mask). Applied to
 ## whatever source is showing — a system's game or the VCR's video.
@@ -1775,7 +1768,6 @@ func _on_plug_snapped(plug: Node3D, input: int) -> void:
 	# Hand the incoming host a clean screen so the C++ video handler doesn't
 	# capture our CRT wrapper as the "original" material to restore later.
 	_drop_sampled()
-	cable_connected.emit(plug)
 	if plug is CablePlug:
 		var plugged := plug as CablePlug
 		_snapped_plugs[input] = plugged
@@ -1892,7 +1884,6 @@ func _on_plug_released(input: int) -> void:
 	# Unwrap before the host tears down so it restores over its own material,
 	# not our CRT wrapper.
 	_drop_sampled()
-	cable_disconnected.emit()
 	var plugged: CablePlug = _snapped_plugs[input]
 	if plugged:
 		remove_collision_exception_with(plugged)
@@ -2089,7 +2080,6 @@ func set_source(source: int) -> void:
 		_tuner.set_active(false)
 
 	show_osd_timed(_source_banner(), 2.0)
-	source_changed.emit(current_source)
 	NetworkManager.report_event(NetObjectSync.EV_TV_SOURCE,
 		{"tv": self, "source": current_source})
 

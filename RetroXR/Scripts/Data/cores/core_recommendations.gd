@@ -314,19 +314,6 @@ static func is_recommended(systemid: String, core_name: String) -> bool:
 	return not core_name.is_empty() and core_for(systemid) == core_name
 
 
-## Why this system's core is the pick on THIS platform, or "" when there is no
-## recommendation.
-static func reason_for(systemid: String) -> String:
-	var entry: Dictionary = RECOMMENDED.get(systemid, {})
-	if entry.is_empty():
-		return ""
-	if _is_mobile():
-		var mobile := str(entry.get("why_android", ""))
-		if not mobile.is_empty():
-			return mobile
-	return str(entry.get("why", ""))
-
-
 ## Every core this platform recommends, deduplicated, in table order.
 ##
 ## Deduplicated because the mapping is one core per SYSTEM, not per core: Genesis

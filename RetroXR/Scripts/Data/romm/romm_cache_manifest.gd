@@ -136,20 +136,9 @@ static func unprotect_file(systemid: String, path: String) -> void:
 		_active_files.erase(key)
 
 
-static func protection_count(systemid: String, path: String) -> int:
-	var relative := _safe_relative(relative_path(systemid, path))
-	return int(_active_files.get(make_key(systemid, relative), 0)) \
-		if not relative.is_empty() else 0
-
-
 # ---------------------------------------------------------------------------
 # Queries
 # ---------------------------------------------------------------------------
-
-func is_cached(systemid: String, fs_name: String) -> bool:
-	var key := _key_for_file(systemid, fs_name)
-	return not key.is_empty() and _group_exists(_entries[key])
-
 
 ## Resolve an original server name, launch path, or any owned member.
 func entry(systemid: String, fs_name: String) -> Dictionary:
