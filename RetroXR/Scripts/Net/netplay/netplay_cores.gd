@@ -48,7 +48,7 @@ const CORES: Dictionary = {
 	"gambatte": {
 		"verified": true,
 		"state_transfer": true,
-		"strategies": [Strategy.LOCKSTEP],
+		"strategies": [Strategy.ROLLBACK, Strategy.LOCKSTEP],
 		"cross_play": false,
 		"systems": ["game_boy", "game_boy_color"],
 		"options": {"gambatte_frame_dupe": "disabled"},

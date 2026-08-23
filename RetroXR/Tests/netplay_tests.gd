@@ -152,10 +152,10 @@ func _test_cores() -> void:
 		"cores/an unvetted core can do neither")
 	_ok(not NetplayCores.state_transfer_capable("nonesuch"),
 		"cores/nor an unknown one")
-	# A core that cannot roll back must not be offered rollback, and gambatte
-	# cannot: rollback rewinds through a state every single frame.
-	_ok(not NetplayCores.rollback_capable("gambatte"),
-		"cores/gambatte does not roll back, because that is a state per frame")
+	# A core that cannot roll back must not be offered rollback, and a core with
+	# no transferable state cannot: rollback rewinds through one every frame.
+	_ok(not NetplayCores.rollback_capable("pcsx_rearmed"),
+		"cores/pcsx_rearmed does not roll back, having no state to rewind through")
 
 	# The debug override exists to let a core be MEASURED. Shipping it a state
 	# that will not restore measures nothing, so it must not reach across into
@@ -180,10 +180,10 @@ func _test_cores() -> void:
 	_ok(NetplayCores.strategies_for("nonesuch").is_empty(),
 		"cores/and so is an unknown one")
 	# Verified is not a blanket yes: it earns the entry, and the entry says which
-	# strategies the evidence actually covers. gambatte is the standing case --
-	# it reproduces perfectly from a cold start and cannot reload its own state,
-	# so lockstep is the only one of the three it can hold.
-	_eq(NetplayCores.strategies_for("gambatte"), [NetplayCores.Strategy.LOCKSTEP],
+	# strategies the evidence actually covers. pcsx_rearmed is the standing case
+	# -- it reproduces perfectly from a cold start and cannot reload its own
+	# state, so determinism is the only one of the three it can hold.
+	_eq(NetplayCores.strategies_for("pcsx_rearmed"), [NetplayCores.Strategy.DETERMINISM],
 		"cores/a core vetted for some strategies gets only those")
 	# And rollback is never offered without the state transfer it rewinds
 	# through, which is the pairing the two keys exist to keep honest.
@@ -191,8 +191,16 @@ func _test_cores() -> void:
 		if NetplayCores.rollback_capable(core):
 			_ok(NetplayCores.state_transfer_capable(core),
 				"cores/%s cannot roll back without a state to rewind through" % core)
-	_ok(not NetplayCores.strategies_for("gambatte").has(NetplayCores.Strategy.ROLLBACK),
-		"cores/gambatte is not vetted for rollback")
+	# gambatte was the standing example of a lockstep-only core, on the reasoning
+	# that it could not reload its own state. That stopped being true when the
+	# frame-dupe pacing was gated, and the entry was never re-measured. It rolls
+	# back now: 275 rewind anchors clean, 164 rewinds over a run whose CRC stream
+	# is identical to the lockstep one, 84 KB a state and 5 us to take it. The
+	# rewind is what found the last defect -- the blit event and the blank-LCD
+	# flag were rebuilt on load rather than saved, which one mid-run reload
+	# survives and a rollback session hits every few seconds.
+	_ok(NetplayCores.strategies_for("gambatte").has(NetplayCores.Strategy.ROLLBACK),
+		"cores/gambatte is vetted for rollback")
 	_ok(NetplayCores.strategies_for("mgba").has(NetplayCores.Strategy.DETERMINISM),
 		"cores/mgba is vetted for determinism, which a GC-GBA group needs")
 	# Strongest first, so a group can take the head of the intersection.
