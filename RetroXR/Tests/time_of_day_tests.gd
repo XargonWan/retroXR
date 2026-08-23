@@ -100,9 +100,49 @@ func _ready() -> void:
 
 	AppPrefs.bedroom_time_of_day = _pref_backup
 	AppPrefs.save_prefs()
+
+	await _settle()
 	print("[test] %d cases, %s" % [_ran,
 		"PASS" if _fail == 0 else "%d FAILURE(S)" % _fail])
 	get_tree().quit(0 if _fail == 0 else 1)
+
+
+## Drop the room and let the AudioServer reclaim what it was playing, BEFORE the
+## main loop ends.
+##
+## Godot's Main::cleanup() frees the SceneTree, then unregisters the GDExtension
+## classes, and only then deletes the AudioServer — which destroys the playbacks
+## it was still holding. A custom AudioStreamPlayback alive at that point is
+## destroyed after its class record is gone, and the process dies with an access
+## violation and no crash-handler output. Nothing between those steps pumps the
+## AudioServer, so no extension-side change can help: a playback is handed back
+## only by AudioServer::update() -> _cleanup_lists() on the main thread, which
+## needs FRAMES after the emitter is released. quit() leaves at most the rest of
+## the current iteration, so the caller has to spend them.
+##
+## BedroomScene is full of spatial emitters, so this suite hit it every other run
+## — it passed in isolation and crashed in the full sequence, which is what a race
+## looks like from the outside. Treat this await as load-bearing; the same
+## reasoning is why Tools/netplay_live_probe.gd awaits before ITS quit().
+##
+## THE FRAME COUNT IS MEASURED, NOT PICKED. Dropping the room is not enough on its
+## own and neither is a token wait: at 12 frames it still died 3 runs in 6, because
+## the reclaim is a CHAIN — the emitters have to go, then the MetaXR mixer notices
+## it has no voices left and frees its own player, and only then does another
+## AudioServer::update() hand the playback back. 60 frames covers the whole chain
+## and ran 18 times green (it crashed 2 in 3 before). If this ever flakes again the
+## answer is to find which link got slower, not to shave this number.
+##
+## It also tells the two teardown crashes apart, which look identical from a test
+## runner: this one prints NO crash-handler backtrace and stops right after the
+## summary line, while a stale Node* in a GDExtension prints
+## "CrashHandlerException ... signal 11" and names the module.
+func _settle() -> void:
+	if is_instance_valid(_root):
+		_root.queue_free()
+		_root = null
+	for _i in range(60):
+		await get_tree().process_frame
 
 
 # ── t = 0.75 IS the room as authored ──────────────────────────────────────────
