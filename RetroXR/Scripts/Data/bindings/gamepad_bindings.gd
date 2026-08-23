@@ -25,6 +25,9 @@ const ANALOG_SCALE      := 0x7fff   # libretro analog full-scale
 ## press does not simultaneously drive a running game.
 static var suspend_polling: bool = false
 
+## Connected joypads the last [Pads] dump described.
+static var _last_seen: Array = []
+
 # ── RetroPad targets ──────────────────────────────────────────────────────────
 ## Ordered so index == RETRO_DEVICE_ID_JOYPAD bit (matches ControllerBindings.JOYPAD_*).
 const TARGET_ORDER: Array = [
@@ -300,16 +303,31 @@ const XR_NAME_HINTS := [
 	"windows mixed reality", "wmr", "touch controller",
 ]
 
+## Android gives Godot the InputDevice name and nothing else — no vendor id, no
+## SDL GUID — and the Quest's own controllers carry no driver name, so they
+## arrive as "Device 0x9873603F55A1038". A pad the player pairs advertises a
+## product name.
+const ANON_NAME_PREFIX := "device 0x"
+
 
 ## Joypads that are real gamepads: everything Godot reports, minus the VR
 ## controllers. THE gate — every enumeration in the project goes through here
 ## rather than calling Input.get_connected_joypads() directly, so a new caller
 ## cannot forget the question.
 static func usable_pads() -> Array:
+	var all := Input.get_connected_joypads()
 	var out: Array = []
-	for device: int in Input.get_connected_joypads():
+	for device: int in all:
 		if not is_xr_device(device):
 			out.append(device)
+	if all != _last_seen:
+		_last_seen = all.duplicate()
+		for device: int in all:
+			print("[Pads] %d '%s' guid='%s' vendor=0x%04x%s" % [device,
+				Input.get_joy_name(device), Input.get_joy_guid(device),
+				int(Input.get_joy_info(device).get("vendor_id",
+					vendor_from_guid(Input.get_joy_guid(device)))),
+				"" if device in out else "  [XR, not offered as a pad]"])
 	return out
 
 
@@ -323,8 +341,8 @@ static func is_xr_device(device: int) -> bool:
 ##
 ## Vendor id first: it is the hardware speaking, and it does not change with a
 ## driver or a locale. `info` carries it where the platform fills it in; the SDL
-## GUID embeds the same value at a fixed offset everywhere else, which is what
-## makes this work on Android where get_joy_info() can come back empty.
+## GUID embeds the same value at a fixed offset on the desktops. Android supplies
+## neither, so there only the name tests can answer.
 static func is_xr_identity(name: String, guid: String, info: Dictionary) -> bool:
 	var vendor := int(info.get("vendor_id", 0))
 	if vendor == 0:
@@ -335,7 +353,7 @@ static func is_xr_identity(name: String, guid: String, info: Dictionary) -> bool
 	for hint: String in XR_NAME_HINTS:
 		if lower.contains(hint):
 			return true
-	return false
+	return lower.begins_with(ANON_NAME_PREFIX)
 
 
 ## The vendor id an SDL joystick GUID carries, or 0 when it is not that shape.

@@ -58,6 +58,7 @@ func _ready() -> void:
 	_test_wii_pad_art()
 	_test_desktop_layers()
 	_test_desktop_legacy_file()
+	_test_xr_identity()
 
 	_restore()
 	print("[test] ---- %d passed, %d failed ----" % [_pass, _fail])
@@ -696,3 +697,25 @@ func _test_desktop_legacy_file() -> void:
 		parsed is Dictionary and (parsed as Dictionary).has("global"))
 
 	InputMap.load_from_project_settings()
+
+
+## Which joypads count as gamepads, tested through the identity rather than the
+## device so it runs with no hardware. The Quest is the case that matters: Godot
+## on Android passes only InputDevice.getName(), and the Touch controllers have
+## no driver name.
+func _test_xr_identity() -> void:
+	_ok("pads/an Android Quest controller is not a gamepad",
+		GamepadBindings.is_xr_identity("Device 0x9873603F55A1038", "", {}))
+	_ok("pads/nor its other hand",
+		GamepadBindings.is_xr_identity("Device 0x5DC1A0F42B77021", "", {}))
+	_ok("pads/a named pad on the same headset still is one",
+		not GamepadBindings.is_xr_identity("Xbox Wireless Controller", "", {}))
+	_ok("pads/8BitDo too",
+		not GamepadBindings.is_xr_identity("8BitDo SN30 Pro", "", {}))
+	_ok("pads/a Meta vendor id is enough on its own",
+		GamepadBindings.is_xr_identity("Wireless Controller", "", {"vendor_id": 0x2833}))
+	_ok("pads/and so is the vendor an SDL GUID carries",
+		GamepadBindings.is_xr_identity("Wireless Controller",
+			"0300000033280000502400000100000000", {}))
+	_eq("pads/the GUID vendor field is read low byte first",
+		GamepadBindings.vendor_from_guid("0300000033280000502400000100000000"), 0x2833)
