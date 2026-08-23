@@ -111,9 +111,9 @@ func _thread_loop() -> void:
 				up_peer.poll()
 				var up_st := up_peer.get_status()
 				if up_st == StreamPeerTCP.STATUS_NONE or up_st == StreamPeerTCP.STATUS_ERROR:
-					var us: Dictionary = c["us"]
-					if us["f"]:
-						(us["f"] as FileAccess).close()
+					# Dropped mid-part: bin the stage. Leaving it would strand a
+					# half-written .part beside the file it was replacing.
+					_discard_part(c["us"] as Dictionary)
 					to_remove.append(c)
 					continue
 				var new_bytes := PackedByteArray()
@@ -351,6 +351,52 @@ func _start_upload_stream(c: Dictionary, rel: String, headers: Dictionary,
 	}
 
 
+## Append to the staged part, reporting a write that did not land.
+##
+## store_buffer returns nothing, so a full disk is only visible through
+## get_error() -- without this the server answered 200 OK over a file that was
+## silently short. A failure abandons the stage rather than promoting it.
+func _write_part(us: Dictionary, chunk: PackedByteArray) -> bool:
+	var f := us["f"] as FileAccess
+	f.store_buffer(chunk)
+	if f.get_error() != OK:
+		push_error("[WebFileServer] Write failed for %s (%d) -- discarding"
+			% [us.get("filename", ""), f.get_error()])
+		_discard_part(us)
+		return false
+	us["written"] = (us["written"] as int) + chunk.size()
+	_upload_progress["written"] = us["written"]
+	return true
+
+
+## Close and delete the staging file, leaving whatever was already at dest alone.
+func _discard_part(us: Dictionary) -> void:
+	if us.get("f") != null:
+		(us["f"] as FileAccess).close()
+		us["f"] = null
+	var part := str(us.get("part", ""))
+	if not part.is_empty() and FileAccess.file_exists(part):
+		DirAccess.remove_absolute(part)
+	us["part"] = ""
+
+
+## Move the finished stage over the real destination.
+func _promote_part(us: Dictionary) -> bool:
+	(us["f"] as FileAccess).close()
+	us["f"] = null
+	var part := str(us.get("part", ""))
+	var dest := str(us.get("dest", ""))
+	if FileAccess.file_exists(dest) and DirAccess.remove_absolute(dest) != OK:
+		push_error("[WebFileServer] Cannot replace %s" % dest)
+		DirAccess.remove_absolute(part)
+		return false
+	if DirAccess.rename_absolute(part, dest) != OK:
+		push_error("[WebFileServer] Cannot promote %s" % part)
+		DirAccess.remove_absolute(part)
+		return false
+	return true
+
+
 ## State-machine step for streaming uploads. Appends new_data to the upload buffer
 ## and writes file bytes to disk as they arrive, keeping only a tiny lookahead buffer.
 ## Returns true when the upload is complete (HTTP response already sent).
@@ -409,12 +455,22 @@ func _feed_upload_stream(c: Dictionary, new_data: PackedByteArray) -> bool:
 			var parent := dest.get_base_dir()
 			if parent != dest_dir:
 				DirAccess.make_dir_recursive_absolute(parent)
-			var f := FileAccess.open(dest, FileAccess.WRITE)
+			# Staged, never written straight to dest. An upload that stops early --
+			# a closed tab, a dropped link, a full disk -- would otherwise leave a
+			# truncated file standing where a good one was, and RomLibrary.scan_roms
+			# would spawn it as a real cartridge. Promoted on the closing boundary,
+			# deleted on any failure. Same rule the ROM downloader and the state
+			# writer already follow.
+			var part := dest + ".part"
+			var f := FileAccess.open(part, FileAccess.WRITE)
 			if not f:
-				push_error("[WebFileServer] Cannot open %s for writing" % dest)
+				push_error("[WebFileServer] Cannot open %s for writing (%d)"
+					% [part, FileAccess.get_open_error()])
 				us["phase"] = "part_preamble"
 				continue
 			us["f"]        = f
+			us["part"]     = part
+			us["dest"]     = dest
 			us["filename"] = sub
 			us["written"]  = 0
 			us["phase"]    = "data"
@@ -429,19 +485,21 @@ func _feed_upload_stream(c: Dictionary, new_data: PackedByteArray) -> bool:
 				var after_term := term_pos + term.size()
 				if after_term + 1 >= buf.size():
 					# Write up to the possible terminator and wait for 2 more bytes.
-					if term_pos > 0:
-						(us["f"] as FileAccess).store_buffer(buf.slice(0, term_pos))
-						us["written"] = (us["written"] as int) + term_pos
-						_upload_progress["written"] = us["written"]
+					if term_pos > 0 and not _write_part(us, buf.slice(0, term_pos)):
+						_send_text(c["peer"] as StreamPeerTCP, 507, "application/json",
+							'{"error":"write failed"}')
+						return true
 					us["buf"] = buf.slice(term_pos)
 					break
 				# Write data before the terminator, then close file.
-				if term_pos > 0:
-					(us["f"] as FileAccess).store_buffer(buf.slice(0, term_pos))
-					us["written"] = (us["written"] as int) + term_pos
-					_upload_progress["written"] = us["written"]
-				(us["f"] as FileAccess).close()
-				us["f"]    = null
+				if term_pos > 0 and not _write_part(us, buf.slice(0, term_pos)):
+					_send_text(c["peer"] as StreamPeerTCP, 507, "application/json",
+						'{"error":"write failed"}')
+					return true
+				if not _promote_part(us):
+					_send_text(c["peer"] as StreamPeerTCP, 500, "application/json",
+						'{"error":"could not save"}')
+					return true
 				us["saved"] = (us["saved"] as int) + 1
 				print("[WebFileServer] Saved: %s" % us["filename"])
 				if buf[after_term] == 45 and buf[after_term + 1] == 45:
@@ -458,9 +516,10 @@ func _feed_upload_stream(c: Dictionary, new_data: PackedByteArray) -> bool:
 				# Terminator not found yet. Flush all bytes that can't be part of it.
 				var safe := buf.size() - (term.size() - 1)
 				if safe > 0:
-					(us["f"] as FileAccess).store_buffer(buf.slice(0, safe))
-					us["written"] = (us["written"] as int) + safe
-					_upload_progress["written"] = us["written"]
+					if not _write_part(us, buf.slice(0, safe)):
+						_send_text(c["peer"] as StreamPeerTCP, 507, "application/json",
+							'{"error":"write failed"}')
+						return true
 					us["buf"] = buf.slice(safe)
 				break
 

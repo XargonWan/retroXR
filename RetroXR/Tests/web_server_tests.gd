@@ -18,10 +18,14 @@
 ## a test that did it would be flaky under CI and would prove less than these do,
 ## because the interesting logic is all reachable directly.
 ##
-## No files are read or written. The resolver is pure string work against the two
-## named roots, and the two roots are derived from statics (server_root() and
-## CoreDownloadManager.default_core_root()) that this asks for rather than assumes,
-## so the cases hold whatever the player's roots happen to be.
+## The resolver cases touch no disk at all: it is pure string work against the two
+## named roots, and the roots are derived from the statics this asks for
+## (server_root(), CoreDownloadManager.default_core_root()) rather than assumed,
+## so they hold whatever the player's roots happen to be.
+##
+## The `upload/` group does write, because staging is the property under test and
+## it cannot be observed anywhere but the filesystem. It confines itself to a
+## __web_selftest folder under the media root and removes it at both ends.
 extends Node
 
 var _pass := 0
@@ -62,6 +66,9 @@ func _ready() -> void:
 		_test_extract_pin()
 		_test_extract_filename()
 		_test_find_bytes()
+	if _wants("upload"):
+		_test_upload_completes()
+		_test_upload_interrupted_keeps_the_original()
 
 	_cleanup()
 	print("[test] ---- %d passed, %d failed ----" % [_pass, _fail])
@@ -229,3 +236,98 @@ func _test_find_bytes() -> void:
 	# than what has arrived so far is the normal case, not an edge one.
 	_eq("parse/a needle longer than the haystack is -1",
 		_srv._find_bytes("ab".to_utf8_buffer(), "abc".to_utf8_buffer()), -1)
+
+
+# ── Upload staging ────────────────────────────────────────────────────────────
+#
+# The upload used to open the REAL destination and stream into it, so a dropped
+# connection left a truncated file standing where a good one had been — and
+# RomLibrary.scan_roms would spawn that as a real cartridge. These drive the
+# state machine directly; no socket is involved, and the assertions are about
+# what is on disk, not what was sent back.
+
+const UP_DIR := "__web_selftest"
+const BOUNDARY := "----RetroXRSelfTest"
+
+
+func _up_root() -> String:
+	return WebFileServer.server_root().path_join(UP_DIR)
+
+
+## A multipart body carrying one named file, as a browser sends it.
+func _multipart(filename: String, payload: String) -> PackedByteArray:
+	var text := "--%s\r\nContent-Disposition: form-data; name=\"f\"; filename=\"%s\"\r\n\r\n" \
+		% [BOUNDARY, filename]
+	var out := text.to_utf8_buffer()
+	out.append_array(payload.to_utf8_buffer())
+	out.append_array(("\r\n--%s--\r\n" % BOUNDARY).to_utf8_buffer())
+	return out
+
+
+## A connection dict shaped the way _thread_loop builds one. The peer is never
+## connected: _send_text writes into a dead socket and is ignored, which is fine
+## because every assertion here is about the filesystem.
+func _upload_conn() -> Dictionary:
+	return {"peer": StreamPeerTCP.new(), "buf": PackedByteArray()}
+
+
+func _begin_upload(c: Dictionary, filename: String, payload: String) -> PackedByteArray:
+	var body := _multipart(filename, payload)
+	_srv._start_upload_stream(c, "media/" + UP_DIR, {
+		"content-type": "multipart/form-data; boundary=" + BOUNDARY,
+		"content-length": str(body.size()),
+	}, PackedByteArray())
+	return body
+
+
+func _cleanup_up_dir() -> void:
+	var dir := DirAccess.open(_up_root())
+	if dir != null:
+		for f in dir.get_files():
+			DirAccess.remove_absolute(_up_root().path_join(f))
+	DirAccess.remove_absolute(_up_root())
+
+
+func _test_upload_completes() -> void:
+	DirAccess.make_dir_recursive_absolute(_up_root())
+	var dest := _up_root().path_join("Game.nes")
+	var c := _upload_conn()
+	var body := _begin_upload(c, "Game.nes", "PAYLOAD-BYTES")
+	var done: bool = _srv._feed_upload_stream(c, body)
+
+	_ok("upload/a whole body finishes the stream", done)
+	_ok("upload/the file lands at its destination", FileAccess.file_exists(dest))
+	_eq("upload/with the bytes that were sent",
+		FileAccess.get_file_as_string(dest), "PAYLOAD-BYTES")
+	_ok("upload/and no staging file is left behind",
+		not FileAccess.file_exists(dest + ".part"))
+	_cleanup_up_dir()
+
+
+## The case the fix exists for. Half a body arrives, then the peer drops.
+func _test_upload_interrupted_keeps_the_original() -> void:
+	DirAccess.make_dir_recursive_absolute(_up_root())
+	var dest := _up_root().path_join("Game.nes")
+	var keep := "THE-ORIGINAL-ROM"
+	var f := FileAccess.open(dest, FileAccess.WRITE)
+	f.store_string(keep)
+	f.close()
+
+	var c := _upload_conn()
+	var body := _begin_upload(c, "Game.nes", "REPLACEMENT-PAYLOAD-THAT-NEVER-ARRIVES")
+	# Enough to open the file and start writing, nowhere near the closing boundary.
+	var partial := body.slice(0, body.size() - 24)
+	var done: bool = _srv._feed_upload_stream(c, partial)
+	_ok("upload/a partial body does not finish the stream", not done)
+	_ok("upload/it is writing to a staging file", (c["us"] as Dictionary).get("f") != null)
+
+	# The peer drops: _thread_loop's disconnect branch calls exactly this.
+	_srv._discard_part(c["us"] as Dictionary)
+
+	_ok("upload/the original file survives an interrupted upload",
+		FileAccess.file_exists(dest), "dest is gone")
+	_eq("upload/and still holds its own bytes",
+		FileAccess.get_file_as_string(dest), keep)
+	_ok("upload/the staging file is cleaned up",
+		not FileAccess.file_exists(dest + ".part"))
+	_cleanup_up_dir()
