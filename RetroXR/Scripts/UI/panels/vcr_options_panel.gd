@@ -5,32 +5,14 @@
 ## Opened/closed via show_for()/hide_panel(); also has an in-UI ✕ close button.
 ## Mirrors CoreOptionsPanel.
 class_name VCROptionsPanel
-extends Node3D
+extends FloatingObjectPanel3D
 
 ## Height above the VCR's origin at which the panel floats.
 const FLOAT_HEIGHT := 0.42
 
 var _vcr: VCRPlayer = null
-var _camera: Node3D = null
-# Guard so we only wire the 2D UI signals once (the SubViewport persists).
-var _ui_connected := false
 
 @onready var _viewport_node: XRToolsViewport2DIn3D = $VCROptionsViewport
-
-
-func _ready() -> void:
-	top_level = true
-	visible = false
-
-
-func _process(_delta: float) -> void:
-	if not visible:
-		return
-	if _vcr and is_instance_valid(_vcr):
-		global_position = _vcr.global_position + Vector3(0, FLOAT_HEIGHT, 0)
-	if _camera and is_instance_valid(_camera):
-		look_at(_camera.global_position, Vector3.UP)
-		rotate_object_local(Vector3.UP, PI)
 
 
 # ── Public API ─────────────────────────────────────────────────────────────────
@@ -44,11 +26,6 @@ func show_for(vcr: VCRPlayer, camera: Node3D) -> void:
 	visible = true
 	_ensure_ui_connected()
 	_populate()
-
-
-## Hide the panel without destroying it.
-func hide_panel() -> void:
-	visible = false
 
 
 # ── Internal helpers ───────────────────────────────────────────────────────────
@@ -104,3 +81,13 @@ func _on_scan_speed_changed(value: float) -> void:
 func _on_vcr_param_changed(pname, value) -> void:
 	if _vcr and is_instance_valid(_vcr):
 		_vcr.set_vcr_param(pname, value)
+
+
+# ── Placement, for FloatingObjectPanel3D ─────────────────────────────────────
+
+func _target_node() -> Node3D:
+	return _vcr
+
+
+func _float_height() -> float:
+	return FLOAT_HEIGHT

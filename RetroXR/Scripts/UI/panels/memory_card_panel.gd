@@ -9,7 +9,7 @@
 ## running console is being written to as the player saves, so anything cached
 ## from last time would be stale.
 class_name MemoryCardPanel
-extends Node3D
+extends FloatingObjectPanel3D
 
 ## Height above the card's origin at which the panel floats.
 const FLOAT_HEIGHT := 0.32
@@ -18,9 +18,6 @@ const FLOAT_HEIGHT := 0.32
 const ARM_SECONDS := 3.0
 
 var _card: MemoryCard = null
-var _camera: Node3D = null
-# Guard so we only wire the 2D UI signals once (the SubViewport persists).
-var _ui_connected := false
 ## Save slot whose delete has been armed and is waiting for a second press.
 var _armed_slot := ""
 ## The bars that float in front of this panel — the spawn menu's stack, hosted
@@ -29,21 +26,6 @@ var _armed_slot := ""
 var _toasts: MenuToasts = null
 
 @onready var _viewport_node: XRToolsViewport2DIn3D = $MemoryCardViewport
-
-
-func _ready() -> void:
-	top_level = true
-	visible = false
-
-
-func _process(_delta: float) -> void:
-	if not visible:
-		return
-	if _card and is_instance_valid(_card):
-		global_position = _card.global_position + Vector3(0, FLOAT_HEIGHT, 0)
-	if _camera and is_instance_valid(_camera):
-		look_at(_camera.global_position, Vector3.UP)
-		rotate_object_local(Vector3.UP, PI)
 
 
 # ── Public API ─────────────────────────────────────────────────────────────────
@@ -56,10 +38,6 @@ func show_for(card: MemoryCard, camera: Node3D) -> void:
 	visible = true
 	_ensure_ui_connected()
 	_populate()
-
-
-func hide_panel() -> void:
-	visible = false
 
 
 # ── Internal helpers ───────────────────────────────────────────────────────────
@@ -296,3 +274,13 @@ func _host_system_for(card: MemoryCard) -> void:
 			if sys.has_method("refresh_memcard_path"):
 				sys.refresh_memcard_path()
 			return
+
+
+# ── Placement, for FloatingObjectPanel3D ─────────────────────────────────────
+
+func _target_node() -> Node3D:
+	return _card
+
+
+func _float_height() -> float:
+	return FLOAT_HEIGHT

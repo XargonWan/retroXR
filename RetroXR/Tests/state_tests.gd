@@ -41,6 +41,7 @@ func _ready() -> void:
 	_test_thumb_cache()
 	_test_backup_notice()
 	_test_panel_chrome()
+	await _test_floating_panels()
 	_restore_ledger()
 	print("[state-ui] ---- %d passed, %d failed ----" % [_pass, _fail])
 	get_tree().quit(1 if _fail > 0 else 0)
@@ -404,3 +405,104 @@ func _test_panel_chrome() -> void:
 			"corner_radius_bottom_left", "corner_radius_bottom_right"]:
 		_eq("chrome/the shared builder sets %s" % corner, made.get(corner), 7)
 	ui.free()
+
+
+# ── Floating 3D panels ────────────────────────────────────────────────────────
+#
+# Six options panels used to carry their own copy of "park above the subject and
+# turn to face the player"; they share FloatingObjectPanel3D now. Nothing tested
+# any of it before, and the failure it guards against is not subtle: a panel that
+# parks at the origin, or presents its back.
+#
+# The panels' own scenes host a SubViewport, which hangs a headless run, so these
+# drive the base directly through a stub and then check each real panel reports
+# the height and subject it always did.
+
+class _StubPanel extends FloatingObjectPanel3D:
+	var subject: Node3D = null
+	var height := 0.5
+	func _target_node() -> Node3D: return subject
+	func _float_height() -> float: return height
+
+
+func _test_floating_panels() -> void:
+	var panel := _StubPanel.new()
+	var subject := Node3D.new()
+	var camera := Node3D.new()
+	add_child(panel)
+	add_child(subject)
+	add_child(camera)
+
+	_ok("panel/starts hidden", not panel.visible)
+	_ok("panel/and detached from its parent's transform", panel.top_level)
+
+	subject.global_position = Vector3(2, 1, -3)
+	panel.subject = subject
+	panel._camera = camera
+	camera.global_position = Vector3(2, 1.6, 0)
+
+	# Hidden: a panel nobody asked for must not be doing transform work.
+	#
+	# TWO frames, not one. process_frame is emitted before the node _process
+	# callbacks for that frame, so a single await returns having run none of them
+	# and the assertion below passes whatever _process does — it was vacuous until
+	# a mutation check removed the visibility guard and this stayed green.
+	await get_tree().process_frame
+	await get_tree().process_frame
+	_ok("panel/a hidden panel does not move",
+		panel.global_position.is_equal_approx(Vector3.ZERO),
+		str(panel.global_position))
+
+	panel.visible = true
+	await get_tree().process_frame
+	_ok("panel/it parks above its subject",
+		panel.global_position.is_equal_approx(Vector3(2, 1.5, -3)),
+		str(panel.global_position))
+
+	# Facing, not merely rotated: the panel's own +Z has to point at the head.
+	# look_at aims -Z, so the half turn in _process is what makes this true, and
+	# without it every panel would show the player its back.
+	var to_camera := (camera.global_position - panel.global_position).normalized()
+	_ok("panel/and turns its face to the camera",
+		panel.global_transform.basis.z.dot(to_camera) > 0.9,
+		"dot = %.3f" % panel.global_transform.basis.z.dot(to_camera))
+
+	# Following, not a one-off placement.
+	subject.global_position = Vector3(-4, 0.25, 1)
+	await get_tree().process_frame
+	_ok("panel/it follows the subject",
+		panel.global_position.is_equal_approx(Vector3(-4, 0.75, 1)),
+		str(panel.global_position))
+
+	panel.hide_panel()
+	_ok("panel/hide_panel hides it", not panel.visible)
+
+	# A subject that goes away mid-frame must not take the panel with it.
+	panel.visible = true
+	panel.subject = null
+	await get_tree().process_frame
+	_ok("panel/a panel whose subject vanished stays put",
+		panel.global_position.is_equal_approx(Vector3(-4, 0.75, 1)))
+
+	panel.free()
+	subject.free()
+	camera.free()
+
+	# Each real panel still reports the height it always had, so the shared
+	# _process places it exactly where its own _process used to.
+	for entry in [["audio_options_panel", "_player", 0.3],
+			["book_options_panel", "_book", 0.35],
+			["dvd_options_panel", "_dvd", 0.42],
+			["mouse_options_panel", "_mouse", 0.3],
+			["vcr_options_panel", "_vcr", 0.42],
+			["memory_card_panel", "_card", 0.32]]:
+		var file: String = entry[0]
+		var scr := load("res://Scripts/UI/panels/%s.gd" % file) as GDScript
+		var base := scr.get_base_script() as GDScript
+		_ok("panel/%s uses the shared base" % file,
+			base != null and base.resource_path.ends_with("floating_object_panel_3d.gd"))
+		var inst: Node3D = scr.new()
+		_eq("panel/%s keeps its float height" % file, inst._float_height(), float(entry[2]))
+		_ok("panel/%s reports no subject before it is shown" % file,
+			inst._target_node() == null)
+		inst.free()

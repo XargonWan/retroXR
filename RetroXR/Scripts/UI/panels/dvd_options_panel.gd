@@ -5,31 +5,14 @@
 ## Opened/closed via show_for()/hide_panel(); also has an in-UI ✕ close button.
 ## Mirrors VCROptionsPanel.
 class_name DVDOptionsPanel
-extends Node3D
+extends FloatingObjectPanel3D
 
 ## Height above the DVD player's origin at which the panel floats.
 const FLOAT_HEIGHT := 0.42
 
 var _dvd: DVDPlayer = null
-var _camera: Node3D = null
-var _ui_connected := false
 
 @onready var _viewport_node: XRToolsViewport2DIn3D = $DVDOptionsViewport
-
-
-func _ready() -> void:
-	top_level = true
-	visible = false
-
-
-func _process(_delta: float) -> void:
-	if not visible:
-		return
-	if _dvd and is_instance_valid(_dvd):
-		global_position = _dvd.global_position + Vector3(0, FLOAT_HEIGHT, 0)
-	if _camera and is_instance_valid(_camera):
-		look_at(_camera.global_position, Vector3.UP)
-		rotate_object_local(Vector3.UP, PI)
 
 
 # ── Public API ─────────────────────────────────────────────────────────────────
@@ -42,10 +25,6 @@ func show_for(dvd: DVDPlayer, camera: Node3D) -> void:
 	visible = true
 	_ensure_ui_connected()
 	_populate()
-
-
-func hide_panel() -> void:
-	visible = false
 
 
 # ── Internal ───────────────────────────────────────────────────────────────────
@@ -95,3 +74,13 @@ func _on_audio_selected(id: int) -> void:
 func _on_subtitle_selected(id: int) -> void:
 	if _dvd and is_instance_valid(_dvd):
 		_dvd.set_subtitle(id)
+
+
+# ── Placement, for FloatingObjectPanel3D ─────────────────────────────────────
+
+func _target_node() -> Node3D:
+	return _dvd
+
+
+func _float_height() -> float:
+	return FLOAT_HEIGHT

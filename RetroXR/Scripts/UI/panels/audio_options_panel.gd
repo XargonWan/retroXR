@@ -3,32 +3,14 @@
 ## Parented to the player but top_level, so it inherits no transform; floats
 ## above the unit facing the camera. Mirrors MouseOptionsPanel.
 class_name AudioOptionsPanel
-extends Node3D
+extends FloatingObjectPanel3D
 
 ## Height above the player's origin at which the panel floats.
 const FLOAT_HEIGHT := 0.3
 
 var _player: RetroAudioPlayer = null
-var _camera: Node3D = null
-# Guard so the 2D UI's signals are wired once (the SubViewport persists).
-var _ui_connected := false
 
 @onready var _viewport_node: XRToolsViewport2DIn3D = $AudioOptionsViewport
-
-
-func _ready() -> void:
-	top_level = true
-	visible = false
-
-
-func _process(_delta: float) -> void:
-	if not visible:
-		return
-	if _player and is_instance_valid(_player):
-		global_position = _player.global_position + Vector3(0, FLOAT_HEIGHT, 0)
-	if _camera and is_instance_valid(_camera):
-		look_at(_camera.global_position, Vector3.UP)
-		rotate_object_local(Vector3.UP, PI)
 
 
 func show_for(player: RetroAudioPlayer, camera: Node3D) -> void:
@@ -39,10 +21,6 @@ func show_for(player: RetroAudioPlayer, camera: Node3D) -> void:
 	visible = true
 	_ensure_ui_connected()
 	_populate()
-
-
-func hide_panel() -> void:
-	visible = false
 
 
 func _get_ui() -> AudioOptions2D:
@@ -77,3 +55,13 @@ func _populate() -> void:
 func _on_ignore_gravity_toggled(enabled: bool) -> void:
 	if _player and is_instance_valid(_player):
 		_player.set_ignore_gravity(enabled)
+
+
+# ── Placement, for FloatingObjectPanel3D ─────────────────────────────────────
+
+func _target_node() -> Node3D:
+	return _player
+
+
+func _float_height() -> float:
+	return FLOAT_HEIGHT
