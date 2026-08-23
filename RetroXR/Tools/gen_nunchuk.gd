@@ -1,301 +1,122 @@
-## Bakes the Wii Nunchuk's shell and its fittings to Scenes/Objects/nunchuk_*.res.
+## Bakes the Wii Nunchuk's parts to Scenes/Objects/controllers/wii/nunchuk_*.res.
 ##
 ##   godot --headless --path RetroXR --script res://Tools/gen_nunchuk.gd
 ##
-## The controller it replaces was a truncated cone with two slabs stuck on it, and
-## every wrong thing about that came from one assumption: that the body is a solid of
-## revolution. It is not. Read off a side elevation, the Nunchuk is a LOFT — a stack
-## of rings whose front and back reach differ, so the silhouette can scoop in on one
-## side while sweeping out on the other. A lathe cannot do that at all; the moment
-## the front and back of a station disagree, a cone is the wrong tool.
+## The shell, C and Z are CUT FROM A LASER SCAN. Only the analog stick and the cord's
+## strain relief are still drawn here, because the scan does not contain them -- the
+## download is the two shell halves, the button bracket and the two keys.
 ##
-## The shape in words, from the reference elevation:
+## Pipeline, and both steps are needed before this script has anything to read:
 ##
-##   * a broad rounded crown carrying the stick, tilted forward,
-##   * a deep concave SCOOP down the front face just below the buttons, where the
-##     index finger sits — the feature that makes the thing read as a Nunchuk rather
-##     than as a handle,
-##   * a belly that swells back out into the palm, widest around 45% down,
-##   * a long taper to a blunt rounded tail, with the cord leaving dead centre and
-##     straight out along the tail's own axis.
+##   blender --background --python Tools/glb/decimate_stl.py -- ##       --in <scan>/Top.stl --in <scan>/Bottom.stl --out /tmp/shell.stl --target 8000
+##   python Tools/nunchuk_scan_keys.py --scan <scan dir> --shell /tmp/shell.stl
 ##
-## The rings interpolate through _PROFILE with a Catmull-Rom, so the table is a dozen
-## control stations rather than forty hand-written ones and the surface between them
-## is smooth by construction. Each station gives a half-width across X and a SEPARATE
-## front and back reach along Z; the ring blends between them as
+## Source: Wesk's "Wiimote Nunchuck Scan" on bitbuilt.net, released under the Unlicense
+## (public domain). See RetroXR/Tools/scan/LICENSE.txt. The scans are 250 MB and are not
+## in this repo; the cropped .tri files are.
 ##
-##     z = c * (dm + ds * c)      c = cos(angle), dm = (db+df)/2, ds = (db-df)/2
+## What was here before, and why it went. The shell was a Catmull-Rom LOFT -- a stack of
+## rings whose front and back reach differed, so the silhouette could scoop in on one
+## side while sweeping out on the other. That was the right structure and it got the
+## overall form right once its profile table was measured against this same scan; the
+## first table had the depth profile inverted end for end and rendered a bowling pin with
+## a bottle cap on it, and every one of the checks below passed on it.
 ##
-## which hits +db at the back, -df at the front, and passes through zero at the sides
-## with a continuous tangent. Taking the front or back radius by a branch on the sign
-## of cos — the obvious way — creases the shell down both flanks instead.
+## What a loft of one ring per station cannot do is a FACET. The real shell carries a
+## flat panel recessed into the brow for the two keys, and with no way to cut one, a
+## 21 mm Z floated 3-4 mm clear at every rake there was; it had to be shortened to 14 to
+## seat at all. The seam had to be a separate ribbon standing 0.35 mm off the surface,
+## the stick's gate a separate collar, and both wanted their own hand-solved angle. All
+## of that is geometry the scan simply has.
 ##
-## Winding is checked the way gen_wii_body.gd checks it: by enclosed volume, on the
-## finished solid. An inside-out shell renders as a convincing object you can see
-## straight through.
+## Kept from that era, because they earn their keep on any mesh: the winding check reads
+## the COMMITTED mesh's own stored normals at its six extreme vertices, which caught the
+## scan's keys arriving inside out (STL winds counter-clockwise from outside, Godot's
+## front face is clockwise); and _smooth indexes before generating normals so smoothing
+## crosses seams.
 extends SceneTree
 
-# The shell runs 105 mm from crown to tail tip. The real one is ~113 mm including
-# the stick, which stands proud of the crown here.
-const Y_TOP := 0.052
-const Y_TIP := -0.053
+# The shell runs the full 113 mm nose to tail tip. It used to be 105, on the reasoning
+# that the stick stood proud of the crown and made up the difference — but the stick is
+# not on the crown, it is set into the back face, so it adds nothing to the length.
+const Y_TOP := 0.056
+const Y_TIP := -0.057
 
-## Where the buttons and the boot go, as fractions along the body. Printed with their
-## resolved surface positions at the end of a run, because nunchuk.tscn authors those
-## by hand and guessing at them is what floated the old slabs off the shell.
-## Far enough apart that the 20 mm Z blade clears the 11.4 mm C key: 15.7 mm between
-## their centres against 8.2 + 5.7 mm of half-lengths measured up the shelf. On the
-## real thing they very nearly touch, and at 0.135 / 0.235 they overlapped outright.
-const T_C := 0.11
-const T_Z := 0.26
-
-const RINGS := 40
-const SEGS := 28
-
-## Control stations: t down the body, half-width across X, then the FRONT and BACK
-## reach along Z as positive magnitudes. Front is -Z, the face the buttons live on.
+## The analog stick's seat on the back face. Everything else that used to be tuned here
+## -- the profile table, the key stations, their rakes, the seam angle -- is gone with
+## the loft: the shell, C and Z are all cut from the scan now and carry their own
+## placement, so there is nothing left to seat but the stick, which the scan does not
+## contain (the download is the two shell halves, the button bracket and the two keys).
 ##
-## t = 0 and t = 1 are poles and must stay zero — the loft closes on them rather than
-## capping, which is what keeps the crown and the tail rounded instead of cut off.
-const _PROFILE := [
-	# t,     hx,      front,   back
-	[0.00,   0.0000,  0.0000,  0.0000],
-	[0.02,   0.0092,  0.0098,  0.0106],
-	[0.06,   0.0144,  0.0152,  0.0172],
-	[0.12,   0.0173,  0.0178,  0.0203],
-	[0.20,   0.0185,  0.0166,  0.0219],
-	[0.28,   0.0190,  0.0139,  0.0230],
-	[0.36,   0.0190,  0.0127,  0.0233],
-	[0.45,   0.0184,  0.0127,  0.0225],
-	[0.55,   0.0172,  0.0130,  0.0206],
-	[0.65,   0.0157,  0.0130,  0.0184],
-	[0.75,   0.0141,  0.0126,  0.0160],
-	[0.84,   0.0121,  0.0116,  0.0135],
-	[0.91,   0.0099,  0.0099,  0.0109],
-	[0.96,   0.0069,  0.0073,  0.0077],
-	[1.00,   0.0000,  0.0000,  0.0000],
-]
+## 34.5 degrees off the SPINE NORMAL -- the perpendicular to the long axis -- leaning
+## toward the nose. Taken from the plane of the BORE'S OWN RIM, which is the only surface
+## that has to be got right: a stick is mechanically perpendicular to its gate, and the
+## boot has to meet that rim all the way round or it leaves a hole.
+##
+## Sectioning the scan gives the rim directly. It is a saddle, not a circle: z = +21 at
+## the nose edge (y = 25), +10 at the tail edge (y = 41), +16.5 at both flanks (x = +/-9).
+## The plane through those three is normal to (0, 0.566, 0.824).
+##
+## This was 19 degrees for a long time, from a side elevation, a plan view and a fit to
+## the shell's back surface AROUND the bore -- three sources agreeing, and all three
+## measuring the wrong thing. The head's back face is much flatter than the gate cut into
+## it, so a fit over any useful window averages the gate away. The symptom was a boot
+## that could not be made to fit: symmetric, it stood 10 mm below the rim on the nose side
+## and poked out on the tail side, and no amount of widening or raising it closed both.
+const STICK_AXIS_FROM_SPINE := 0.6021   # deg_to_rad(34.5)
+
+## Where the stick's own pole sits below its seat, along that axis. 0.5 mm, because the
+## shell's bore is 16 mm long on a face that drops 11 mm across it: every millimetre of
+## drop puts the boot another millimetre down a well it is supposed to be filling. At the
+## 3.4 mm this started at, the cap also stood only 5 mm proud of the body against the 8
+## to 11 the reference shows.
+const STICK_DROP := 0.0005
+
+## How many sides the turned parts get. The shell used to be lofted at 40 rings of
+## these; only the stick and the strain relief still are.
+const SEGS := 28
 
 
 func _init() -> void:
 	_build_body()
-	_build_seam()
-	_build_gate()
 	_build_stick()
 	_build_boot()
 	_build_c()
 	_build_z()
-	_report_seats()
 	quit()
 
 
 # ── The shell ────────────────────────────────────────────────────────────────
 
 func _build_body() -> void:
-	var rings: Array = []
-	for r in RINGS + 1:
-		var t := float(r) / float(RINGS)
-		rings.append(_ring(t))
-	var tris := _loft(rings)
-	_save(_smooth(tris), "res://Scenes/Objects/controllers/wii/nunchuk_body.res")
+	_build_scan_part("res://Tools/scan/nunchuk_body.tri",
+		"res://Scenes/Objects/controllers/wii/nunchuk_body.res")
 
 
-## The moulding seam, which runs the whole length of both flanks where the two shell
-## halves meet. Visible in every reference photograph and, at this scale, most of what
-## says the thing is moulded plastic rather than turned from one piece.
-##
-## Drawn as a narrow ribbon rather than cut into the shell: the loft is a closed solid
-## and a real groove would mean splitting every ring. The ribbon rides the widest line
-## on each flank — where the seam actually falls, since that IS the parting line a
-## two-part mould leaves — and stands 0.15 mm out so it cannot z-fight the shell.
-func _build_seam() -> void:
+## Reads Tools/nunchuk_scan_keys.py's output: "NCTR", vertex and triangle counts,
+## then the vertices and the indices. Expanded back to a soup so the ordinary
+## _smooth/_save path runs -- including the winding check, which matters more here
+## than anywhere else in this file because the winding came from another program's
+## conventions and Godot's front face is the opposite one.
+func _build_scan_part(src: String, dst: String) -> void:
+	var f := FileAccess.open(src, FileAccess.READ)
+	if f == null:
+		push_error("[gen] missing %s -- run Tools/nunchuk_scan_keys.py" % src)
+		return
+	if f.get_buffer(4).get_string_from_ascii() != "NCTR":
+		push_error("[gen] %s is not a .tri" % src)
+		return
+	var nv := f.get_32()
+	var nt := f.get_32()
+	var verts: Array[Vector3] = []
+	verts.resize(nv)
+	for i in nv:
+		verts[i] = Vector3(f.get_float(), f.get_float(), f.get_float())
 	var tris: Array[Vector3] = []
-	for side in [1.0, -1.0]:
-		var prev: Array = []
-		for r in RINGS + 1:
-			var t := float(r) / float(RINGS)
-			var a_mid := _seam_angle(t, side)
-			# Skip the poles: the ring collapses there and the ribbon would pinch to
-			# nothing across a face it no longer has room to sit on.
-			if t < 0.04 or t > 0.965:
-				prev = []
-				continue
-			var lo := _ring_at(t, a_mid - SEAM_HALF_ANGLE, side)
-			var hi := _ring_at(t, a_mid + SEAM_HALF_ANGLE, side)
-			if not prev.is_empty():
-				tris.append_array([prev[0], prev[1], lo])
-				tris.append_array([prev[1], hi, lo])
-			prev = [lo, hi]
-	# A ribbon is a sheet, not a solid, so _smooth's orientation check would read its
-	# enclosed volume as meaningless. Emitted double-sided in the material instead.
-	_save_sheet(_smooth_sheet(tris), "res://Scenes/Objects/controllers/wii/nunchuk_seam.res")
-
-
-## How wide the seam ribbon is, as a half-angle round the ring. About 3 degrees, which
-## comes out near 0.5 mm on the widest part of the body.
-const SEAM_HALF_ANGLE := 0.055
-## How far the ribbon stands off the shell, along the flank's outward normal (+/-X at
-## the seam line, near enough).
-##
-## 0.35 mm, not the 0.15 it started at, and the difference is the shell's TESSELLATION
-## rather than the surface. The ribbon is computed on the analytic surface, but the
-## body is a 28-sided approximation to it, and mid-facet the chord cuts up to
-## 0.12 mm inside — so at 0.15 the far flank's ribbon surfaced through the shell in
-## flecks wherever a facet dipped under it. Clearing the chord error is what matters
-## here, not clearing the surface.
-const SEAM_STANDOFF := 0.00035
-
-
-## Where round the ring the parting line falls, at station `t`.
-##
-## NOT simply the widest point in X. The ring's widest X is at z = 0 by construction,
-## and z = 0 is not its mid-depth — the front and back reaches differ, so the ring's
-## centre sits at (db - df)/2. A seam pinned to the widest point therefore comes out
-## dead straight down the side view while the body curves around it, which is exactly
-## what the first cut looked like and exactly what the reference does not.
-##
-## So the angle is solved for instead: the c where the ring's own z reaches its
-## mid-depth, from ds*c^2 + dm*c - ds = 0. The seam then follows the flank the way a
-## mould's parting line follows the body it splits.
-static func _seam_angle(t: float, side: float) -> float:
-	var df := _sample(t, 2)
-	var db := _sample(t, 3)
-	var dm := (db + df) * 0.5
-	var ds := (db - df) * 0.5
-	var c := 0.0
-	if absf(ds) > 1e-6 and dm > 1e-6:
-		c = clampf((-dm + sqrt(dm * dm + 4.0 * ds * ds)) / (2.0 * ds), -1.0, 1.0)
-	var a := acos(c)                     # in (0, PI), so sin(a) >= 0 — the +X flank
-	return a if side > 0.0 else TAU - a
-
-
-## One point on the body's surface at station `t` and angle `a`, pushed out along the
-## flank so it clears the shell.
-func _ring_at(t: float, a: float, side: float) -> Vector3:
-	var hx := _sample(t, 1)
-	var df := _sample(t, 2)
-	var db := _sample(t, 3)
-	var y := lerpf(Y_TOP, Y_TIP, t)
-	var dm := (db + df) * 0.5
-	var ds := (db - df) * 0.5
-	var c := cos(a)
-	return Vector3(hx * sin(a) + side * SEAM_STANDOFF, y, c * (dm + ds * c))
-
-
-## One ring of the loft, in the object's own frame.
-func _ring(t: float) -> Array:
-	var hx := _sample(t, 1)
-	var df := _sample(t, 2)
-	var db := _sample(t, 3)
-	var y := lerpf(Y_TOP, Y_TIP, t)
-	var dm := (db + df) * 0.5
-	var ds := (db - df) * 0.5
-	var out: Array = []
-	for s in SEGS:
-		var a := TAU * float(s) / float(SEGS)
-		var c := cos(a)
-		out.append(Vector3(hx * sin(a), y, c * (dm + ds * c)))
-	return out
-
-
-## Catmull-Rom through the control stations, on column `col`. Clamped at both ends so
-## the poles stay exactly zero — an overshooting spline there turns the crown inside
-## out, and it does it subtly enough to survive a head-on render.
-static func _sample(t: float, col: int) -> float:
-	var n := _PROFILE.size()
-	var i := 0
-	while i < n - 2 and float(_PROFILE[i + 1][0]) < t:
-		i += 1
-	var p1: Array = _PROFILE[i]
-	var p2: Array = _PROFILE[i + 1]
-	var p0: Array = _PROFILE[maxi(i - 1, 0)]
-	var p3: Array = _PROFILE[mini(i + 2, n - 1)]
-	var span := float(p2[0]) - float(p1[0])
-	var u := 0.0 if span <= 0.0 else clampf((t - float(p1[0])) / span, 0.0, 1.0)
-	var v := _catmull(float(p0[col]), float(p1[col]), float(p2[col]), float(p3[col]), u)
-	return maxf(v, 0.0)
-
-
-static func _catmull(a: float, b: float, c: float, d: float, u: float) -> float:
-	var u2 := u * u
-	var u3 := u2 * u
-	return 0.5 * ((2.0 * b) + (-a + c) * u + (2.0 * a - 5.0 * b + 4.0 * c - d) * u2
-		+ (-a + 3.0 * b - 3.0 * c + d) * u3)
-
-
-## Stitch a stack of rings into a closed solid. The first and last rings are poles —
-## every vertex identical — so they fan instead of stitching, and the ends come out
-## rounded rather than capped.
-static func _loft(rings: Array) -> Array[Vector3]:
-	var out: Array[Vector3] = []
-	for r in range(rings.size() - 1):
-		var lo: Array = rings[r]
-		var hi: Array = rings[r + 1]
-		for s in lo.size():
-			var s2 := (s + 1) % lo.size()
-			var a: Vector3 = lo[s]
-			var b: Vector3 = lo[s2]
-			var c: Vector3 = hi[s]
-			var d: Vector3 = hi[s2]
-			# A pole ring collapses one side of the quad; emitting the degenerate
-			# triangle anyway would leave a zero-area face for generate_normals to
-			# average in, which dimples the crown.
-			if a.is_equal_approx(b):
-				out.append_array([a, d, c])
-			elif c.is_equal_approx(d):
-				out.append_array([a, b, c])
-			else:
-				out.append_array([a, b, c])
-				out.append_array([b, d, c])
-	return out
-
-
-# ── Fittings ─────────────────────────────────────────────────────────────────
-
-## The OCTAGONAL gate the stick sits in — the stepped well moulded into the crown,
-## which the thumbstick overhangs. Unmistakable in a photograph taken straight down
-## the stick's axis, and absent from the first cut of this model entirely: the stick
-## grew out of a bare dome, which is what made the crown read as unfinished.
-##
-## A raised collar rather than a recess cut into the shell. The shell is a closed loft
-## and cutting a well into it would mean splitting every ring near the crown around an
-## octagon; a collar set into the dome gets the same silhouette for a fraction of the
-## machinery, and the dome is convex there so nothing floats.
-##
-## Eight sides, flats top and bottom (phase 22.5 degrees). The reference does not say
-## which way the octagon is clocked and this is the reading that looks deliberate.
-func _build_gate() -> void:
-	var rings: Array = []
-	rings.append(_poly(-0.0060, 0.0000))      # buried, closes the bottom
-	rings.append(_poly(-0.0060, 0.0112))
-	rings.append(_poly(0.0000, 0.0112))       # outer wall, most of it inside the dome
-	rings.append(_poly(0.0016, 0.0106))       # chamfer up to the rim
-	rings.append(_poly(0.0018, 0.0094))       # rim's inner edge
-	rings.append(_poly(-0.0024, 0.0091))      # bore wall dropping away under the cap
-	rings.append(_poly(-0.0028, 0.0000))      # bore floor
-	_save(_smooth(_loft(rings)), "res://Scenes/Objects/controllers/wii/nunchuk_gate.res")
-
-
-## NOTE — there is no separate dark floor to this bore, and that is a retreat rather
-## than a design. One was built (a flat octagonal puck, darkness by MATERIAL, the same
-## call gen_rca_jack.gd makes for its socket) and it rendered OVER the stick cap: a
-## 17 mm puck measured at world y 0.0455..0.0491 winning the depth test against a cap
-## whose top is at 0.0597, under an orthographic camera looking straight down. Proven
-## by bisection — hiding that one node made the cap reappear — and not explained. The
-## cap was ruled out as the cause: rendered alone against a green field it is solid,
-## with no hole for anything to show through.
-##
-## It is dropped because the cap covers all but a rim of the bore anyway, so the part
-## bought almost nothing. If a dark bore is ever wanted here, expect this to recur.
-
-
-## An eight-sided ring at height `y`. Radius zero makes it a pole.
-static func _poly(y: float, r: float) -> Array:
-	var out: Array = []
-	for s in 8:
-		var a := TAU * (float(s) + 0.5) / 8.0
-		out.append(Vector3(r * sin(a), y, r * cos(a)))
-	return out
+	tris.resize(nt * 3)
+	for i in nt * 3:
+		tris[i] = verts[f.get_32()]
+	_save(_smooth(tris), dst)
 
 
 ## The stick: a waisted stalk under a dished cap. The cap's top is CONCAVE — a thumb
@@ -303,7 +124,26 @@ static func _poly(y: float, r: float) -> Array:
 ## that separates it from a plain disc at a glance.
 func _build_stick() -> void:
 	var rings: Array = []
-	rings.append(_disc(0.0, 0.0))                    # pole under the stalk
+	# The BOOT, and it is the reason the stick had a hole around it. The shell is a
+	# scan now, so its bore is a real 19 mm x 16 mm opening; a 12.4 mm stalk standing
+	# in the middle of that leaves a crescent you look straight down into.
+	#
+	# Measured by sectioning the scan rather than guessed at. Across the body at the
+	# stick's station the outer surface simply stops between x = -9 and x = +9; along
+	# the centreline it stops between y = 25 and y = 41. That also shows why the first
+	# attempt at this failed: the rim is not level. It sits at z = +21 on the nose
+	# side and z = +10 on the tail side, an 11 mm drop across an 18 mm hole, so a flat
+	# disc tucked 6 mm under the stalk ended up 16 mm below the rim and simply floored
+	# a deep well instead of closing it.
+	#
+	# So it is a shallow DOME, 25 mm across at its base and rising to meet the stalk,
+	# which is what the real part has anyway: a rubber boot filling the gate. Paired
+	# with a much smaller STICK_DROP so it sits up in the opening rather than at the
+	# bottom of it.
+	rings.append(_disc(-0.0060, 0.0000))             # buried pole, closes the boot
+	rings.append(_disc(-0.0060, 0.0120))             # skirt, never seen
+	rings.append(_disc(-0.0018, 0.0128))             # the widest ring: this is the one
+	rings.append(_disc(-0.0006, 0.0112))             # that shows, 1.8 mm under the rim
 	rings.append(_disc(0.0, 0.0062))
 	rings.append(_disc(0.0020, 0.0059))
 	rings.append(_disc(0.0044, 0.0051))              # the waist
@@ -351,55 +191,58 @@ func _build_boot() -> void:
 	_save(_smooth(_loft(rings)), "res://Scenes/Objects/controllers/wii/nunchuk_boot.res")
 
 
-## C: a small round key, domed, standing 3 mm off its shelf.
-func _build_c() -> void:
-	var rings: Array = []
-	rings.append(_disc(0.0, 0.0))
-	rings.append(_disc(0.0, 0.0057))
-	rings.append(_disc(0.0016, 0.0057))
-	rings.append(_disc(0.0024, 0.0053))
-	rings.append(_disc(0.0029, 0.0042))
-	rings.append(_disc(0.0032, 0.0023))
-	rings.append(_disc(0.0033, 0.0000))
-	_save(_smooth(_loft(rings)), "res://Scenes/Objects/controllers/wii/nunchuk_c.res")
-
-
-## Z: the trigger, a rounded oblong 14 x 20 mm standing 4.5 mm off its shelf.
+## C and Z are CUT FROM THE LASER SCAN, not drawn here.
 ##
-## Lofted as a stack of shrinking superellipses with a pole at each end, so it comes
-## out a domed slab with soft edges and no open face. The first cut raked its two ends
-## by different amounts, on the reasoning that a finger pulls ACROSS the trigger — but
-## raking a ring that is also shrinking twists the loft, and it rendered as a pair of
-## fins rather than a key. The rake belongs to the SEAT, which nunchuk.tscn already
-## applies to the whole button.
+## Source: Wesk's "Wiimote Nunchuck Scan" on bitbuilt.net, released under the Unlicense
+## (public domain). Tools/nunchuk_scan_keys.py crops each key to its cap plus a 5.5 mm
+## skirt, welds it down to a few thousand triangles and writes Tools/scan/nunchuk_*.tri;
+## the 250 MB scans themselves are not in this repo.
+##
+## The shell stays procedural and the keys do not, and the split is not arbitrary. A
+## shell is a smooth loft and reads as one. What makes a key read as a key is a crisp
+## outline and a parting line, and every attempt to measure THOSE and redraw them here
+## gave a different answer -- the rake alone came back at 21, 25, 27, 31, 41 and 63
+## degrees on the same part, differing only in which facets were gathered, because a
+## scanned button is mostly internal ribs and stem and they out-vote the 13 mm of face
+## that shows. Cropping ends the argument: the part carries its own shape and size.
+##
+## What the scan does NOT carry over is placement. It knows what a key looks like; it
+## does not know what this shell looks like, and they are not the same surface. The seat
+## is still _seat_rake's, bisected so both ends of the key stand the same distance off.
+func _build_c() -> void:
+	_build_scan_part("res://Tools/scan/nunchuk_c.tri",
+		"res://Scenes/Objects/controllers/wii/nunchuk_c.res")
+
+
+## Z: the trigger. Cut from the scan too -- see _build_c above for why.
 func _build_z() -> void:
-	var hx := 0.0070          # half width across X
-	var hz := 0.0100          # half length along the shelf
-	var rings: Array = []
-	rings.append(_oblong(0.0, 0.0, 0.0))
-	rings.append(_oblong(hx, hz, 0.0))
-	rings.append(_oblong(hx, hz, 0.0026))
-	rings.append(_oblong(hx * 0.95, hz * 0.97, 0.0036))
-	rings.append(_oblong(hx * 0.84, hz * 0.90, 0.0043))
-	rings.append(_oblong(hx * 0.55, hz * 0.66, 0.0047))
-	rings.append(_oblong(0.0, 0.0, 0.0048))
-	_save(_smooth(_loft(rings)), "res://Scenes/Objects/controllers/wii/nunchuk_z.res")
-
-
-## A rounded-rectangle ring in the XZ plane at height `y`. A superellipse rather than
-## an ellipse: squarer down the flanks, still rounded at the corners, which is what a
-## moulded key looks like. Both radii zero makes it a pole.
-static func _oblong(hx: float, hz: float, y: float) -> Array:
-	var out: Array = []
-	var p := 2.6
-	for s in SEGS:
-		var a := TAU * float(s) / float(SEGS)
-		var sx := sin(a)
-		var cz := cos(a)
-		var kx: float = signf(sx) * pow(absf(sx), 2.0 / p)
-		var kz: float = signf(cz) * pow(absf(cz), 2.0 / p)
-		out.append(Vector3(hx * kx, y, hz * kz))
+	_build_scan_part("res://Tools/scan/nunchuk_z.tri",
+		"res://Scenes/Objects/controllers/wii/nunchuk_z.res")
+## Stitches a stack of rings into a triangle soup.
+static func _loft(rings: Array) -> Array[Vector3]:
+	var out: Array[Vector3] = []
+	for r in range(rings.size() - 1):
+		var lo: Array = rings[r]
+		var hi: Array = rings[r + 1]
+		for s in lo.size():
+			var s2 := (s + 1) % lo.size()
+			var a: Vector3 = lo[s]
+			var b: Vector3 = lo[s2]
+			var c: Vector3 = hi[s]
+			var d: Vector3 = hi[s2]
+			# A pole ring collapses one side of the quad; emitting the degenerate
+			# triangle anyway would leave a zero-area face for generate_normals to
+			# average in, which dimples the crown.
+			if a.is_equal_approx(b):
+				out.append_array([a, d, c])
+			elif c.is_equal_approx(d):
+				out.append_array([a, b, c])
+			else:
+				out.append_array([a, b, c])
+				out.append_array([b, d, c])
 	return out
+
+
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
@@ -423,28 +266,6 @@ func _smooth(tris: Array[Vector3]) -> ArrayMesh:
 	st.index()
 	st.generate_normals()
 	return st.commit()
-
-
-## Weld and smooth-shade a SHEET. No orientation pass: _orient weighs enclosed volume,
-## which is only an oracle for a closed solid — a ribbon encloses nothing and would be
-## flipped or not on the strength of a rounding error. The material draws it
-## double-sided instead, so which way it faces cannot matter.
-func _smooth_sheet(tris: Array[Vector3]) -> ArrayMesh:
-	var st := SurfaceTool.new()
-	st.begin(Mesh.PRIMITIVE_TRIANGLES)
-	for v in tris:
-		st.add_vertex(v)
-	st.index()
-	st.generate_normals()
-	return st.commit()
-
-
-## …and save it without the closed-solid check, for the same reason.
-func _save_sheet(mesh: ArrayMesh, path: String) -> void:
-	var err := ResourceSaver.save(mesh, path)
-	var ab: AABB = mesh.get_aabb()
-	print("[gen] %-44s err=%d  %.4f x %.4f x %.4f m  (sheet)"
-		% [path, err, ab.size.x, ab.size.y, ab.size.z])
 
 
 ## Turn a solid the right way out if it came out inside in.
@@ -525,63 +346,3 @@ static func _enclosed(mesh: ArrayMesh) -> float:
 	for i in range(0, idx.size(), 3):
 		v += verts[idx[i]].dot(verts[idx[i + 1]].cross(verts[idx[i + 2]])) / 6.0
 	return v
-
-
-## Where the shell's surface actually is at the stations nunchuk.tscn has to author
-## by hand. The old model floated its buttons because these were guessed.
-## How far a key is pushed back along its own axis so its skirt meets the shell
-## rather than balancing on the tangent point.
-const KEY_SINK := 0.0015
-
-
-func _report_seats() -> void:
-	# name, station, half-length of the key along the shelf (C is round r=5.7,
-	# Z is the 20 mm blade).
-	for row: Array in [["C", T_C, 0.0057], ["Z", T_Z, 0.0100]]:
-		var t: float = row[1]
-		var n := _front_normal(t)
-		var surf := Vector3(0.0, lerpf(Y_TOP, Y_TIP, t), -_sample(t, 2))
-		var o := surf - n * KEY_SINK
-		# Rx(theta) takes +Y to the normal, which is the direction the key faces.
-		var th := atan2(n.z, n.y)
-		var cs := cos(th)
-		var sn := sin(th)
-		print("[gen] seat %s  t=%.3f  faces %+.1f deg from horizontal" % [
-			row[0], t, rad_to_deg(atan2(n.y, -n.z))])
-		print("[gen]   transform = Transform3D(1, 0, 0, 0, %.5f, %.5f, 0, %.5f, %.5f, 0, %.5f, %.5f)"
-			% [cs, sn, -sn, cs, o.y, o.z])
-		# How far each END of the key stands off the shell. This is the check that was
-		# missing: a key is seated by its CENTRE, but the face it sits on curves, so a
-		# rake that is right in the middle can still drive one end through the shell
-		# and lift the other off it. Anything beyond a couple of mm is a key you will
-		# see from somewhere you should not.
-		var half: float = row[2]
-		var along := Vector3(0.0, -sn, cs)         # the key's own long axis, Rx(theta)*+Z
-		for e: float in [half, -half]:
-			var p: Vector3 = o + along * e
-			var te: float = clampf((Y_TOP - p.y) / (Y_TOP - Y_TIP), 0.0, 1.0)
-			var proud: float = (-_sample(te, 2)) - p.z
-			print("[gen]   end %+.1f mm along: stands %+.2f mm off the shell"
-				% [e * 1000.0, proud * 1000.0])
-	print("[gen] crown y=%+.4f   tail tip y=%+.4f" % [Y_TOP, Y_TIP])
-
-
-## Outward normal of the FRONT face at station `t`, in the YZ plane.
-##
-## Derived, not guessed, and the first cut of this model guessed: both keys were given
-## a flat Rx(-55) on the reasoning that the shelf faces up and forward at 35 degrees.
-## The front face is not a plane. Its reach peaks around t = 0.16 and falls away either
-## side, so C sits ABOVE that brow facing up-and-out while Z sits BELOW it facing
-## DOWN-and-out — 40 degrees apart, and both a long way from -55. The Z blade is 20 mm
-## long, so getting its rake wrong by that much drove one end 9 mm into the shell and
-## stood the other 6 mm off it, which is why the key could be seen from underneath.
-static func _front_normal(t: float) -> Vector3:
-	var h := 0.004
-	var t0 := maxf(t - h, 0.0)
-	var t1 := minf(t + h, 1.0)
-	# The front surface is (y(t), -front(t)); y falls linearly with t.
-	var ty := (Y_TIP - Y_TOP) * (t1 - t0)
-	var tz := -(_sample(t1, 2) - _sample(t0, 2))
-	# Rotate the tangent a quarter turn into the outward side (negative z).
-	var n := Vector3(0.0, -tz, ty).normalized()
-	return n if n.z < 0.0 else -n
