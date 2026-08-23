@@ -18,6 +18,7 @@ const MAX_PLAYERS := 8
 ## user://. Spelled out rather than derived, the same way rom_library.gd spells
 ## out each of its roots.
 const GLPROBE_EXTERNAL_CFG := "/sdcard/Android/data/com.xenu.retroxr/files/glprobe.cfg"
+const RBCOST_EXTERNAL_CFG := "/sdcard/Android/data/com.xenu.retroxr/files/rbcost.cfg"
 ## 2: systems are replicated by model_id rather than by a (systemid, variant)
 ## pair. 3 added netplay. 4 made linked sessions carry a specification per
 ## machine. 5 added per-machine aux/keyboard blocks and machine-addressed disc
@@ -105,6 +106,19 @@ func _ready() -> void:
 	call_deferred("_parse_cmdline")
 
 
+## Swap the room out for a probe scene, once the room is actually up.
+##
+## `_parse_cmdline` runs from a `call_deferred` in `_ready`, which is early
+## enough that MainScene is still assembling itself — and tearing a half-built
+## XR scene down took the render thread with it (SIGSEGV on VkThread, preceded
+## by a bare "data.tree is null" from a node being freed mid-setup). Letting the
+## room finish first costs a second and makes the teardown an ordinary one.
+func _swap_in_probe(path: String) -> void:
+	for _i in range(120):
+		await get_tree().process_frame
+	get_tree().change_scene_to_file(path)
+
+
 func _parse_cmdline() -> void:
 	# On-device QA hook: a user://spike.cfg boots straight into the netplay
 	# determinism spike (used to vet cores over adb on Quest, where there are
@@ -128,6 +142,17 @@ func _parse_cmdline() -> void:
 			and ResourceLoader.exists("res://Tools/gl_video_probe.tscn"):
 		print("[NetworkManager] glprobe.cfg found — launching GL video probe")
 		get_tree().change_scene_to_file("res://Tools/gl_video_probe.tscn")
+		return
+	# Same hook for the rollback cost probe. Whether rollback is affordable is a
+	# property of the machine, so the answer only counts when taken here rather
+	# than on a desktop. Read from /sdcard too, like the GL probe: a release
+	# build is the only one that runs properly on a Quest and `run-as` cannot
+	# reach its user:// at all.
+	if (FileAccess.file_exists("user://rbcost.cfg") \
+			or FileAccess.file_exists(RBCOST_EXTERNAL_CFG)) \
+			and ResourceLoader.exists("res://Tools/rollback_cost_probe.tscn"):
+		print("[NetworkManager] rbcost.cfg found — launching rollback cost probe")
+		_swap_in_probe("res://Tools/rollback_cost_probe.tscn")
 		return
 	# Same hook for menu timings. Deleted on sight, so a crash mid-run cannot
 	# wedge the app into the probe.
