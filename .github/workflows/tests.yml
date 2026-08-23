@@ -1,0 +1,105 @@
+name: Tests
+
+# Runs every self-checking suite in RetroXR/Tests via Tools/run_tests.py.
+#
+# Until this existed the repo had ~14,000 lines of suites that exit non-zero on
+# failure and nothing that ever ran them together — release.yml and
+# sidequest.yml are packaging only, so a red suite could sit red indefinitely.
+
+on:
+  push:
+    branches: [master]
+    paths-ignore: ['**.md', 'docs/**']
+  pull_request:
+    paths-ignore: ['**.md', 'docs/**']
+  workflow_dispatch:
+
+env:
+  GODOT_VERSION: 4.7-stable
+
+jobs:
+  tests:
+    runs-on: windows-latest
+    # The suites themselves are ~8 minutes; the rest is the extension build on a
+    # cold cache. Bounded so a wedged run costs an hour, not the six-hour default.
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+        with: { submodules: recursive, lfs: true }
+
+      - run: pip install scons
+
+      # Own cache key: this job builds only template_debug, so sharing the
+      # desktop job's key would keep evicting half of whichever ran last.
+      - name: Restore the SCons cache
+        uses: actions/cache@v4
+        with:
+          path: .scons-cache
+          key: scons-v1-tests-${{ runner.os }}-${{ env.GODOT_VERSION }}-${{ github.sha }}
+          restore-keys: |
+            scons-v1-tests-${{ runner.os }}-${{ env.GODOT_VERSION }}-
+
+      # Six of the fifteen suites name a C++ class directly and cannot run
+      # without the extensions: rope_tests and link_tests need VerletRope,
+      # netplay_tests needs LinkCoordinator, and link/motion/scene/system_tests
+      # need Libretro. Debug only — nothing here is exported, and the headless
+      # editor loads the debug-tagged libraries.
+      - name: Build the six GDExtensions (windows x86_64, debug)
+        env:
+          SCONS_CACHE: ${{ github.workspace }}/.scons-cache
+        run: python Tools/build.py windows --target debug debug_symbols=no use_hot_reload=no
+
+      # No export templates: nothing is exported here, so the editor binary on
+      # its own is enough to import the project and run a scene headless.
+      - name: Install Godot ${{ env.GODOT_VERSION }}
+        shell: pwsh
+        run: |
+          $base = "https://github.com/godotengine/godot/releases/download/$env:GODOT_VERSION"
+          Invoke-WebRequest "$base/Godot_v${env:GODOT_VERSION}_win64.exe.zip" -OutFile godot.zip
+          Expand-Archive godot.zip -DestinationPath godot-bin
+          "GODOT=$PWD/godot-bin/Godot_v${env:GODOT_VERSION}_win64_console.exe" |
+            Out-File -Append -Encoding utf8 $env:GITHUB_ENV
+          Remove-Item godot.zip -Force
+
+      # A cold .godot/ makes Godot abort with "Main scene's path could not be
+      # resolved from UID", so this has to run before any suite loads a scene.
+      # --editor --quit does NOT wait for the filesystem scan (it quits after
+      # init); --import is the mode that waits. The editor passes then rebuild
+      # the global class cache the suites resolve their class_names through.
+      - name: Import the project
+        shell: bash
+        run: |
+          set -euo pipefail
+          pass() {
+            local label=$1; shift
+            "$GODOT" --headless --path RetroXR "$@" > "import-$label.log" 2>&1 || true
+            echo "$label: $(grep -acE 'SCRIPT ERROR|Parse Error|SHADER ERROR' "import-$label.log") script/shader errors"
+          }
+          pass import --import
+          pass editor1 --editor --quit
+          pass editor2 --editor --quit
+
+      - name: Fail on any script or shader error
+        shell: bash
+        run: |
+          set -euo pipefail
+          # All six extensions have a windows stanza and are built above, so a
+          # load failure here is a real one and is not excused.
+          grep -aE "SCRIPT ERROR|Parse Error|SHADER ERROR|Failed to load|Failed to instantiate" import-editor2.log \
+            | grep -avE "xrCreateInstance|\.NET Sdk|xr_staging_shim" \
+            > errors.log || true
+          if [ -s errors.log ]; then cat errors.log; echo "::error::import reported errors"; exit 1; fi
+          echo "import clean"
+
+      # run_tests.py picks up $GODOT, runs the suites sequentially, and exits
+      # non-zero if any of them does. It prints only the failing cases.
+      - name: Run the test suites
+        run: python Tools/run_tests.py
+
+      - name: Upload the import logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: import-logs
+          path: import-*.log
+          if-no-files-found: ignore
