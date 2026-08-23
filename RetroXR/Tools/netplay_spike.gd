@@ -54,7 +54,10 @@ var timeout_s := 110.0   ## a heavy core needs far more than the default
 var options: Dictionary = {}
 var state_out := ""      # write this run's state + CRC table here
 var state_in := ""       # load another machine's state instead of self-saving
-const ROLLBACK_LAG := 3      # confirmations trail execution by this many frames
+## Confirmations trail execution by this many frames. 0 is the isolating case:
+## the engine still serializes EVERY frame, and never mispredicts, so a run that
+## differs from lockstep at lag 0 blames retro_serialize rather than the rewind.
+var rollback_lag := 3
 const ROLLBACK_MAX_AHEAD := 8
 
 var save_at := 600
@@ -115,6 +118,8 @@ func _ready() -> void:
 			state_in = arg.trim_prefix("--spike-state-in=")
 		elif arg == "--spike-rollback":
 			rollback = true
+		elif arg.begins_with("--spike-lag="):
+			rollback_lag = int(arg.trim_prefix("--spike-lag="))
 	if not state_in.is_empty():
 		if not _load_bundle(state_in):
 			return
@@ -183,7 +188,7 @@ func _process(_delta: float) -> void:
 		# get corrected. (The speculation throttle keeps this from deadlocking:
 		# execution stalls at watermark + max_ahead, which keeps cur - LAG
 		# ahead of the feed pointer.)
-		while _next_feed <= cur - ROLLBACK_LAG:
+		while _next_feed <= cur - rollback_lag:
 			_lib.PostNetplayInputs(_next_feed, _flat(_next_feed))
 			_next_feed += 1
 	else:
