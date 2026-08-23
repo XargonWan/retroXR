@@ -1138,6 +1138,9 @@ func _test_every_socket_can_be_saved() -> void:
 # DSR, RTS to CTS -- so the two consoles are peers, either end goes in either
 # console, and there is no junction and no third player.
 
+## A layer nothing in the room uses, so the trimesh the panel is measured against
+## meets no real body and no real body meets it.
+const _PANEL_LAYER := 1 << 19
 const PSX_CABLE_SCENE := "res://Scenes/Objects/cables/psx_link_cable.tscn"
 const PSX_PORT_SCENE := "res://Scenes/Objects/cables/psx_link_port.tscn"
 
@@ -1251,7 +1254,7 @@ func _test_psx_socket_follows_the_hardware() -> void:
 		# a real SCPH-1001 is 187 mm deep against the box's 250, so its panel sits
 		# at -0.093 and a socket correctly on it failed a threshold written for a
 		# machine 60 mm longer.
-		var panel := _rear_panel_z(psx)
+		var panel := _panel_face_z(psx, psx.to_local(on_psx.global_position))
 		_ok("it is on the back panel", on_psx.position.z <= panel + 0.002,
 			"z = %.4f against a panel at %.4f" % [on_psx.position.z, panel])
 		var av_gap := _nearest_av_gap(psx, on_psx.position.x)
@@ -1406,7 +1409,7 @@ func _test_psx_socket_is_in_the_panel() -> void:
 	# SystemBody in the tree and merely HIDDEN, so measuring it compares the
 	# socket against a box no player can see -- and the PlayStation's box reaches
 	# 32 mm further back than its shell does.
-	var panel_z: float = _rear_panel_z(psx)
+	var panel_z: float = _panel_face_z(psx, psx.to_local(port.global_position))
 
 	# The recess, likewise. Its MOUTH is the end nearest the outside world, which
 	# is the most negative z of the two.
@@ -1463,32 +1466,93 @@ func _test_psx_socket_is_in_the_panel() -> void:
 	await get_tree().process_frame
 
 
-## The rearmost point of the body this machine actually wears, in its own frame.
+## The back panel of the body this machine actually wears, AT a given point on
+## it, in the machine's own frame.
 ##
-## Deliberately measured off the SHELL when there is one and the primitive
-## SystemBody only when there is not, rather than over every mesh in the machine:
-## the serial port is a child of the machine too, and its recess sits a
-## millimetre proud of the panel, so a blanket sweep would measure the socket
-## against itself and pass no matter where it was put.
-func _rear_panel_z(machine: Node3D) -> float:
+## Measured off the SHELL when there is one and the primitive SystemBody only
+## when there is not, rather than over every mesh in the machine: the serial port
+## is a child of the machine too, and its recess sits a millimetre proud of the
+## panel, so a blanket sweep would measure the socket against itself and pass no
+## matter where it was put.
+##
+## RAYCAST, and it has to be. This was the shell's rearmost mesh CORNER, which is
+## what playstation_model was using to place the socket -- so both sides of
+## "the mouth of the recess is level with the panel" agreed on a number that was
+## 9.5 mm out, the case passed, and the console wore a black cube on its back
+## panel through several rounds of review. A check that shares the code's own
+## mistake cannot fail. measure-shell-panel-by-raycast says an AABB will lie
+## about a panel; this is what that looks like when a test believes it too.
+## The back panel of the body this machine actually wears, AT a given point on
+## it, in the machine's own frame.
+##
+## Measured off the SHELL when there is one and the primitive SystemBody only
+## when there is not, rather than over every mesh in the machine: the serial port
+## is a child of the machine too, and its recess sits a millimetre proud of the
+## panel, so a blanket sweep would measure the socket against itself and pass no
+## matter where it was put.
+##
+## RAYCAST, and it has to be. This was the shell's rearmost mesh CORNER, which is
+## exactly what playstation_model was using to place the socket -- so both sides
+## of "the mouth of the recess is level with the panel" agreed on a number 9.5 mm
+## out, the case passed, and the console wore a black cube on its back panel
+## through several rounds of review. A check that shares the code's own mistake
+## cannot fail. measure-shell-panel-by-raycast says an AABB will lie about a
+## panel; this is what it looks like when the test believes it too.
+##
+## Cast against the TRIANGLES rather than through the physics server, which the
+## note's recipe uses. One ray does not need bodies, a physics frame or the
+## machine held still, and a shell carries meshes Jolt will not take: SilverTrim
+## builds a shape it rejects outright, one loud error per call, for a trim that
+## could never be the panel anyway.
+func _panel_face_z(machine: Node3D, at: Vector3) -> float:
 	var shell := machine.find_child("Shell", true, false) as Node3D
-	if shell != null:
-		var best := INF
-		for n in shell.find_children("*", "MeshInstance3D", true, false):
-			var mi := n as MeshInstance3D
-			if mi.mesh == null or not mi.is_visible_in_tree():
+	if shell == null:
+		var body := machine.find_child("SystemBody", true, false) as MeshInstance3D
+		return body.get_aabb().position.z if body != null else 0.0
+
+	# A RING around the point, not the point itself, and the nearest face of the
+	# lot. Aim a single ray at a socket and it goes through the opening and
+	# reports whatever is 2.5 mm further in -- a number that is neither the panel
+	# nor the connector. The ring clears the 16 x 4.8 mm mouth by about 2 mm on
+	# every side and still lands well short of the phono row 20 mm away.
+	var best := INF
+	for ix in [-0.010, -0.005, 0.0, 0.005, 0.010]:
+		for iy in [-0.004, 0.0, 0.004]:
+			if absf(ix) < 0.009 and absf(iy) < 0.003:
+				continue                    # inside the mouth
+			best = minf(best, _first_face_z(machine, shell,
+				Vector3(at.x + ix, at.y + iy, 0.0)))
+	return best if is_finite(best) else NAN
+
+
+## Where a ray from behind the machine first meets the shell, in machine-local z.
+##
+## Cast against the TRIANGLES rather than through the physics server, which
+## measure-shell-panel-by-raycast's recipe uses. One ray needs no bodies, no
+## physics frame and no holding the machine still, and a shell carries meshes
+## Jolt will not take: SilverTrim builds a shape it rejects outright, one loud
+## error per call, for a trim that could never be the panel anyway.
+func _first_face_z(machine: Node3D, shell: Node3D, at: Vector3) -> float:
+	var from: Vector3 = machine.to_global(Vector3(at.x, at.y, -0.5))
+	var dir: Vector3 = (machine.to_global(Vector3(at.x, at.y, 0.5)) - from).normalized()
+	var best := INF
+	for n in shell.find_children("*", "MeshInstance3D", true, false):
+		var mi := n as MeshInstance3D
+		if mi.mesh == null or not mi.is_visible_in_tree():
+			continue
+		var to_local := mi.global_transform.affine_inverse()
+		var lf: Vector3 = to_local * from
+		var ld: Vector3 = (to_local.basis * dir).normalized()
+		if not mi.get_aabb().grow(0.001).intersects_ray(lf, ld):
+			continue
+		var faces := mi.mesh.get_faces()
+		for i in range(0, faces.size() - 2, 3):
+			var p: Variant = Geometry3D.ray_intersects_triangle(
+				lf, ld, faces[i], faces[i + 1], faces[i + 2])
+			if p == null:
 				continue
-			var ab: AABB = mi.get_aabb()
-			for i in 8:
-				var corner := ab.position + Vector3(
-					ab.size.x * float(i & 1),
-					ab.size.y * float((i >> 1) & 1),
-					ab.size.z * float((i >> 2) & 1))
-				best = minf(best, machine.to_local(mi.global_transform * corner).z)
-		if is_finite(best):
-			return best
-	var body := machine.find_child("SystemBody", true, false) as MeshInstance3D
-	return body.get_aabb().position.z if body != null else 0.0
+			best = minf(best, machine.to_local(mi.global_transform * (p as Vector3)).z)
+	return best
 
 
 ## How far the nearest phono socket on this machine is from a given x.
