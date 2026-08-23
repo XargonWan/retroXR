@@ -396,6 +396,37 @@ func _test_panel_chrome() -> void:
 		_ok("chrome/the background is opaque", sb.bg_color.a > 0.5,
 			str(sb.bg_color))
 
+	# The margin is the builder's other half: ten panels used to add their own
+	# PanelContainer and MarginContainer by hand, and the panel is useless if the
+	# content sits flush against the rounded edge.
+	var margin := _find(ui, "MarginContainer") as MarginContainer
+	_ok("chrome/the content is inset from the edge", margin != null)
+	if margin != null:
+		for side in ["margin_top", "margin_bottom", "margin_left", "margin_right"]:
+			_ok("chrome/%s is set" % side, margin.get_theme_constant(side) > 0,
+				"%s = %d" % [side, margin.get_theme_constant(side)])
+		_ok("chrome/and the margin lives inside the panel",
+			panel.is_ancestor_of(margin))
+
+	# MenuStyle.panel_root builds both halves; prove it directly as well, so a
+	# panel that stops using it is the only thing that can break these.
+	var host := Node2D.new()
+	add_child(host)
+	var built := MenuStyle.panel_root(host, Color(0.2, 0.3, 0.4, 1.0), 6, 9)
+	_ok("chrome/the builder returns a margin", built != null)
+	_eq("chrome/the builder sets the padding it was given",
+		built.get_theme_constant("margin_left"), 9)
+	var built_panel := built.get_parent() as PanelContainer
+	_ok("chrome/wrapped in a panel", built_panel != null)
+	if built_panel != null:
+		var built_sb := built_panel.get_theme_stylebox("panel") as StyleBoxFlat
+		_eq("chrome/with the radius it was given",
+			built_sb.corner_radius_top_left, 6)
+		_eq("chrome/and the colour", built_sb.bg_color, Color(0.2, 0.3, 0.4, 1.0))
+		_ok("chrome/anchored to fill its host",
+			built_panel.anchor_right == 1.0 and built_panel.anchor_bottom == 1.0)
+	host.free()
+
 	# MenuStyle.rounded is the shared builder; prove it really does produce the
 	# same thing the panels used to build by hand, so the swap is not just
 	# consistent with itself.

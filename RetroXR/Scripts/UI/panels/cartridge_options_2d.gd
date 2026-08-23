@@ -153,16 +153,7 @@ func _build_ui() -> void:
 		# "Cartridge", so nothing here named the game actually in the slot.
 		_build_embedded_header(root_vbox)
 	else:
-		var panel := PanelContainer.new()
-		panel.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-		var bg := MenuStyle.rounded(COLOR_BG, 10)
-		panel.add_theme_stylebox_override("panel", bg)
-		add_child(panel)
-
-		var margin := MarginContainer.new()
-		for side in ["margin_top", "margin_bottom", "margin_left", "margin_right"]:
-			margin.add_theme_constant_override(side, 12)
-		panel.add_child(margin)
+		var margin := MenuStyle.panel_root(self, COLOR_BG, 10, 12)
 		margin.add_child(root_vbox)
 
 		_build_title(root_vbox)

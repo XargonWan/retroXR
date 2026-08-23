@@ -262,3 +262,24 @@ static func human_bytes(bytes: int) -> String:
 	if bytes >= 1024:
 		return "%.0f KB" % (float(bytes) / 1024.0)
 	return "%d B" % bytes
+
+
+## The root every *_2d options panel puts inside its viewport: a full-rect
+## PanelContainer carrying a rounded background, wrapping a MarginContainer.
+## Returns the margin, which is what the caller fills.
+##
+## Ten of the eleven panels built this by hand, identically bar the radius and
+## the padding. The eleventh (the dropdown) adds a border and anchors without
+## offsets, so it keeps its own and is not forced through a flag.
+static func panel_root(parent: Node, color: Color, radius: int,
+		pad: int) -> MarginContainer:
+	var panel := PanelContainer.new()
+	panel.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	panel.add_theme_stylebox_override("panel", rounded(color, radius))
+	parent.add_child(panel)
+
+	var margin := MarginContainer.new()
+	for side in ["margin_top", "margin_bottom", "margin_left", "margin_right"]:
+		margin.add_theme_constant_override(side, pad)
+	panel.add_child(margin)
+	return margin
