@@ -23,18 +23,19 @@ extends AnimatedController
 ## over a dark red lens, so it GLOWS. It lit nothing, which is the same gap the
 ## console's power lamp had -- a glowing lens is not a lamp.
 ##
-## The figures are nes_model's, deliberately NOT re-derived, exactly as
-## playstation_model reuses them. nes_model's working converts a real luminous
-## intensity into this project's scale (BedroomScene's desk lamp fixes one energy
-## unit at about 64 lux, so an indicator of I millicandela wants I/64000), and a
-## third machine inventing its own brightness would put three indicators at odds
-## on one shelf.
+## nes_model's method, deliberately NOT re-derived, exactly as playstation_model
+## reuses it: brightness is set from the PEAK the light lays on the shell behind
+## the lens, and energy solved back out as peak * LED_STANDOFF^2.
 ##
-## Dimmer than either console's, at a third of the intensity: this is a lamp on a
-## pad held in the hand and read from 300 mm, not a panel indicator across a room,
-## and the lens is 4.5 x 1.8 mm against the console's.
+## Dimmer than either console's, at peak 2.0 against their 3.0: this is a lamp on
+## a pad held in the hand and read from 300 mm, not a panel indicator across a
+## room, and the lens is 4.5 x 1.8 mm against the console's.
+##
+## The ENERGY is a sixth of theirs rather than two-thirds, and comparing energies
+## across the three is meaningless: this standoff is 3 mm against their 6, and
+## d^(-2) squares that difference. Compare peaks.
 const LED_STANDOFF := 0.003
-const LED_ENERGY := 0.00016
+const LED_ENERGY := 0.000018
 const LED_DECAY := 2.0
 const LED_RANGE := 0.25
 ## Red, from the ASSET: the material's emissive is (1, 0, 0) over a (0.133, 0, 0)
@@ -180,6 +181,10 @@ func _build_analog_lamp() -> void:
 	_led_glow.light_energy = LED_ENERGY
 	_led_glow.omni_range = LED_RANGE
 	_led_glow.omni_attenuation = LED_DECAY
+	# A point source millimetres from glossy ABS throws a specular highlight the
+	# real lens cannot — here a bright arc on both stick rims. Its reflection comes
+	# from the emissive mesh instead.
+	_led_glow.light_specular = 0.0
 	_led_glow.shadow_enabled = false
 	_led_glow.distance_fade_enabled = true
 	_led_glow.distance_fade_begin = 2.0

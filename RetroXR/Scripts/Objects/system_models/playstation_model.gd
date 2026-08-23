@@ -180,17 +180,20 @@ func has_eject_button() -> bool:
 
 # --- power LED --------------------------------------------------------------
 
-## The NES's figures, deliberately NOT re-derived. Both are small diffused panel
-## indicators a few millimetres across, and the whole point of nes_model's
-## derivation is that it converts a real luminous intensity into this project's
-## light scale (BedroomScene's desk lamp fixes one energy unit at about 64 lux, so
-## an indicator of I millicandela wants I/64000). A second console inventing its
-## own brightness would make the two disagree on a shelf for no reason.
+## nes_model's METHOD — peak on the panel behind the lens, energy solved back out
+## as peak * LED_STANDOFF^2 — but deliberately not its energy.
 ##
-## See nes_model.gd for the working: 30 mcd, true inverse-square decay, and a
-## range set wide enough that the cutoff is not itself a visible edge.
+## Matching the NES on raw linear peak puts this lamp 2.7x brighter to the eye.
+## Rec.709 weights green 0.7152 against red 0.2126, so LED_COLOR here is luminance
+## 0.765 where the NES's is 0.279, and a millicandela figure is luminance-weighted
+## already. Peaks are only comparable between the two after that weighting.
+##
+## Peak 0.8 raw, i.e. 0.61 luminance against the NES's 0.84. Deliberately UNDER
+## rather than level: this lens sits at the top-front corner and spills onto a
+## large, light-grey top deck, where the NES's is recessed in a darker vertical
+## panel that catches far less.
 const LED_STANDOFF := 0.006
-const LED_ENERGY := 0.00047
+const LED_ENERGY := 0.0000288
 const LED_DECAY := 2.0
 const LED_RANGE := 0.45
 
@@ -245,6 +248,9 @@ func _build_power_glow() -> void:
 	_power_light_glow.light_energy = LED_ENERGY
 	_power_light_glow.omni_range = LED_RANGE
 	_power_light_glow.omni_attenuation = LED_DECAY
+	# A point source millimetres from glossy ABS throws a specular highlight the
+	# real lens cannot. Its reflection comes from the emissive mesh instead.
+	_power_light_glow.light_specular = 0.0
 	_power_light_glow.shadow_enabled = false
 	_power_light_glow.distance_fade_enabled = true
 	_power_light_glow.distance_fade_begin = 3.0
@@ -260,7 +266,10 @@ func _build_power_glow() -> void:
 
 func _set_power_light(on: bool) -> void:
 	for m in _power_light_mats:
-		m.emission_energy_multiplier = 3.0 if on else 0.0
+		# 1.0, not the NES's 3.0, on the same green weighting as LED_ENERGY: this
+		# emission colour at 3.0 is luminance 2.25, against 0.745 for the NES's lit
+		# lens and 0.757 for the DualShock's.
+		m.emission_energy_multiplier = 1.0 if on else 0.0
 	if _power_light_glow != null:
 		# Hidden rather than dimmed to zero: an energy-0 light is still a light
 		# the renderer culls and binds per object.

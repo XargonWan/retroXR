@@ -345,24 +345,25 @@ func _process(_delta: float) -> void:
 ## the pool is a hard dot; a few millimetres out it spreads across the front
 ## panel the way the real one bleeds into the plastic around it.
 const LED_STANDOFF := 0.006
-## A luminous intensity, not a brightness dial, because LED_DECAY is 2.0.
-##
-## Godot 4 attenuates a positional light as
+## Set from the PEAK value the light lays on the panel directly behind the lens:
+## energy = peak * LED_STANDOFF^2. Godot attenuates a positional light as
 ##     (1 - (d/range)^4)^2 * d^(-decay)
-## so with decay 2 the falloff IS inverse square and light_energy carries the
-## units of candelas, once scaled into whatever "1.0" means in this project.
-## BedroomScene's DeskLampLight fixes that scale: energy 1.0 over a 3 m range
-## stands in for a ~400 lm bulb, which is 127 lux at half a metre against the 2.0
-## the formula returns there -- so one unit of energy is about 64 lux, and a light
-## of I millicandela wants an energy of I/64000.
+## which is inverse square at LED_DECAY 2.0, with the range window still ~1 this
+## close in.
 ##
-## A vintage diffused red panel indicator runs 10-50 mcd (modern "plain" ones
-## start around 80 mcd, and 200 is already attention-grabbing). 30 mcd is the
-## middle of that, and rendering the whole bracket in the bedroom agreed: 10 is
-## barely there, 100 is a machine with a warning lamp on it.
-const LED_ENERGY := 0.00047
+## NOT from the LED's rated millicandela. A point source over-predicts the bezel
+## by more than an order of magnitude at 6 mm: the lens is about as wide as the
+## distance being divided by, and the real emitter sits IN the panel, occluded
+## sideways by its own bezel.
+##
+## Peak 3.0 because spill cannot outshine what spills it — the lit lens runs
+## emission 3.0, so this puts the brightest plastic level with the lens and
+## everything else below it. Past about 6 the panel clips white under FILMIC and
+## blooms; under about 1.5 the machine stops reading as switched on.
+const LED_ENERGY := 0.000108
 ## True inverse square. The pool has to FADE, and to fade at the rate the eye
-## expects of something this small and this close.
+## expects of something this small and this close. A softer exponent stops the
+## pool being local at all and fogs the whole top deck.
 const LED_DECAY := 2.0
 ## Purely where the light stops being evaluated -- with an inverse-square decay it
 ## is the decay, not this, that shapes the pool. Set it tight and the range window
@@ -418,6 +419,9 @@ func _build_power_glow() -> void:
 	_power_light_glow.light_energy = LED_ENERGY
 	_power_light_glow.omni_range = LED_RANGE
 	_power_light_glow.omni_attenuation = LED_DECAY
+	# A point source millimetres from glossy ABS throws a specular highlight the
+	# real lens cannot. Its reflection comes from the emissive mesh instead.
+	_power_light_glow.light_specular = 0.0
 	_power_light_glow.shadow_enabled = false
 	_power_light_glow.distance_fade_enabled = true
 	_power_light_glow.distance_fade_begin = 3.0
