@@ -1,45 +1,31 @@
-[gd_scene format=3]
+[gd_scene format=3 uid="uid://csk8ng32pk2wr"]
 
-[ext_resource type="Script" path="res://Scripts/Objects/peripherals/wiimote.gd" id="1_wmscript"]
+[ext_resource type="Script" uid="uid://dj1hmxe638iut" path="res://Scripts/Objects/peripherals/wiimote.gd" id="1_wmscript"]
 [ext_resource type="Script" uid="uid://myg1jnlsxhnm" path="res://Scripts/Objects/highlights/pickable_highlight.gd" id="2_pickhigh"]
 [ext_resource type="Script" uid="uid://b8uwrf51jd5xm" path="res://addons/godot-xr-tools/objects/grab_points/grab_point.gd" id="3_grabpoint"]
 [ext_resource type="PackedScene" path="res://Scenes/Objects/hand_poses/hand_grip_right.tscn" id="4_rhand"]
 [ext_resource type="PackedScene" path="res://Scenes/Objects/hand_poses/hand_grip_left.tscn" id="5_lhand"]
 [ext_resource type="PackedScene" uid="uid://ce7vysyvondf8" path="res://addons/godot-xr-tools/objects/snap_zone.tscn" id="6_snapzone"]
 [ext_resource type="Script" uid="uid://d3iq3gmwxpvjl" path="res://Scripts/Objects/widgets/vr_button.gd" id="7_vrbtn"]
-[ext_resource type="Script" path="res://Scripts/Objects/widgets/vr_hinge.gd" id="8_vrhinge"]
-[ext_resource type="Texture2D" path="res://Textures/Controllers/wii_marks/wii_mark_power.svg" id="9_mk_power"]
-[ext_resource type="Texture2D" path="res://Textures/Controllers/wii_marks/wii_mark_a.svg" id="9_mk_a"]
-[ext_resource type="Texture2D" path="res://Textures/Controllers/wii_marks/wii_mark_minus.svg" id="9_mk_minus"]
-[ext_resource type="Texture2D" path="res://Textures/Controllers/wii_marks/wii_mark_home.svg" id="9_mk_home"]
-[ext_resource type="Texture2D" path="res://Textures/Controllers/wii_marks/wii_mark_plus.svg" id="9_mk_plus"]
-[ext_resource type="Texture2D" path="res://Textures/Controllers/wii_marks/wii_mark_one.svg" id="9_mk_one"]
-[ext_resource type="Texture2D" path="res://Textures/Controllers/wii_marks/wii_mark_two.svg" id="9_mk_two"]
-
-; Shell, trigger and moulding seam, baked by Tools/gen_wiimote.gd. Edit the
-; profile tables there and re-run it; there is nothing to hand-edit here.
+[ext_resource type="Script" uid="uid://bkw0pkdhlp1m4" path="res://Scripts/Objects/widgets/vr_hinge.gd" id="8_vrhinge"]
+[ext_resource type="Texture2D" uid="uid://3mexuod8ggki" path="res://Textures/Controllers/wii_marks/wii_mark_a.svg" id="9_mk_a"]
+[ext_resource type="Texture2D" uid="uid://b6n7ijajy15si" path="res://Textures/Controllers/wii_marks/wii_mark_home.svg" id="9_mk_home"]
+[ext_resource type="Texture2D" uid="uid://cttbbitqv0t6g" path="res://Textures/Controllers/wii_marks/wii_mark_minus.svg" id="9_mk_minus"]
+[ext_resource type="Texture2D" uid="uid://dmp55cesur1ic" path="res://Textures/Controllers/wii_marks/wii_mark_one.svg" id="9_mk_one"]
+[ext_resource type="Texture2D" uid="uid://56v6koj1ailt" path="res://Textures/Controllers/wii_marks/wii_mark_plus.svg" id="9_mk_plus"]
+[ext_resource type="Texture2D" uid="uid://dc4bq3jng4jfn" path="res://Textures/Controllers/wii_marks/wii_mark_power.svg" id="9_mk_power"]
+[ext_resource type="Texture2D" uid="uid://bmo3ws7lyur4b" path="res://Textures/Controllers/wii_marks/wii_mark_two.svg" id="9_mk_two"]
+[ext_resource type="ArrayMesh" path="res://Scenes/Objects/controllers/wii/wiimote_cover.res" id="20_cover"]
+[ext_resource type="ArrayMesh" path="res://Scenes/Objects/controllers/wii/wiimote_seam.res" id="20_seam"]
 [ext_resource type="ArrayMesh" path="res://Scenes/Objects/controllers/wii/wiimote_shell.res" id="20_shell"]
 [ext_resource type="ArrayMesh" path="res://Scenes/Objects/controllers/wii/wiimote_trigger.res" id="20_trigger"]
-[ext_resource type="ArrayMesh" path="res://Scenes/Objects/controllers/wii/wiimote_seam.res" id="20_seam"]
-[ext_resource type="ArrayMesh" path="res://Scenes/Objects/controllers/wii/wiimote_cover.res" id="20_cover"]
 
 [sub_resource type="PhysicsMaterial" id="PhysMat_wm"]
 friction = 0.8
 
-; 36 x 30 x 148 mm — the real remote's shell, long axis on Z with -Z forward
-; (the IR window end). Every child position below is measured off that.
-;
-; The physics proxy stays a plain box even though the shell is now a lofted
-; solid with filleted edges and rolled ends. A box is the right proxy for a
-; bar-shaped prop, and holding it fixed across the reshape kept grab, throw,
-; snap-zone and save/restore behaviour bit-identical while the visual moved.
 [sub_resource type="BoxShape3D" id="BoxShape3D_body"]
 size = Vector3(0.036, 0.03, 0.148)
 
-; The console's lacquer, to the number — Mat_white in wii_primitive.tscn. Same moulded
-; white plastic on the real hardware, and the gloss is what carries the shape: these
-; rooms light with a flat ambient and no radiance map, so a matte white slab renders as
-; one even field with nothing to say it is a solid object.
 [sub_resource type="StandardMaterial3D" id="Mat_shell"]
 albedo_color = Color(0.93, 0.93, 0.915, 1)
 metallic_specular = 0.6
@@ -48,112 +34,16 @@ clearcoat_enabled = true
 clearcoat = 0.65
 clearcoat_roughness = 0.04
 
-[sub_resource type="StandardMaterial3D" id="Mat_dark"]
-albedo_color = Color(0.1, 0.1, 0.11, 1)
-
-; The moulding parting line down both flanks. A ribbon standing 0.15 mm off the
-; shell rather than a groove cut into it — the shell is a closed loft and a real
-; groove would mean splitting every ring. Barely darker than the lacquer: this
-; is a shut line catching light, not an inked stripe.
-;
-; CULL_DISABLED because a ribbon is a SHEET. It encloses no volume, so nothing in
-; the generator can decide which way it should face, and the material is where
-; that stops mattering.
 [sub_resource type="StandardMaterial3D" id="Mat_seam"]
 cull_mode = 2
 albedo_color = Color(0.86, 0.86, 0.85, 1)
-metallic_specular = 0.5
 roughness = 0.35
-
-[sub_resource type="StandardMaterial3D" id="Mat_grey"]
-albedo_color = Color(0.72, 0.72, 0.74, 1)
-
-; The 1/2/-/+ caps and the trigger, a touch darker than the shell so they read
-; as separate parts under the room's light rather than as printed circles.
-[sub_resource type="StandardMaterial3D" id="Mat_cap"]
-albedo_color = Color(0.62, 0.63, 0.66, 1)
 
 [sub_resource type="BoxMesh" id="BoxMesh_ir"]
 size = Vector3(0.022, 0.01, 0.002)
 
-; D-pad: one cross built from two bars rather than four separate keys, which is
-; what the real one is — a single rocker.
-[sub_resource type="BoxMesh" id="BoxMesh_dpad_h"]
-size = Vector3(0.019, 0.003, 0.0065)
-
-[sub_resource type="BoxMesh" id="BoxMesh_dpad_v"]
-size = Vector3(0.0065, 0.003, 0.019)
-
-[sub_resource type="CylinderMesh" id="Cyl_a"]
-top_radius = 0.0055
-bottom_radius = 0.0055
-height = 0.003
-radial_segments = 16
-rings = 1
-
-[sub_resource type="CylinderMesh" id="Cyl_small"]
-top_radius = 0.0035
-bottom_radius = 0.0035
-height = 0.0025
-radial_segments = 12
-rings = 1
-
-; HOME, 7.2 mm across. It used to be 9 — wider than MINUS and PLUS beside it,
-; which the hardware does not do: on a real remote HOME is the same size as its
-; neighbours or a whisker over, and what sets it apart is that it sits DOWN in a
-; dish rather than that it is big.
-[sub_resource type="CylinderMesh" id="Cyl_home"]
-top_radius = 0.0036
-bottom_radius = 0.0036
-height = 0.0022
-radial_segments = 16
-rings = 1
-
-[sub_resource type="CylinderMesh" id="Cyl_num"]
-top_radius = 0.0045
-bottom_radius = 0.0045
-height = 0.0025
-radial_segments = 12
-rings = 1
-
-; Poke volumes for the face buttons, a touch wider than the caps so a fingertip
-; that lands on the edge of one still counts as on it.
-[sub_resource type="CylinderShape3D" id="CylShape_a"]
-radius = 0.007
-height = 0.005
-
-[sub_resource type="CylinderShape3D" id="CylShape_small"]
-radius = 0.005
-height = 0.004
-
-[sub_resource type="CylinderShape3D" id="CylShape_home"]
-radius = 0.006
-height = 0.004
-
-[sub_resource type="CylinderShape3D" id="CylShape_num"]
-radius = 0.006
-height = 0.004
-
-; Poke volume for POWER. Same idea as the face caps' — a touch wider than the
-; cap so a fingertip landing on its edge still counts as on it.
-[sub_resource type="CylinderShape3D" id="CylShape_power"]
-radius = 0.005
-height = 0.004
-
-; The dished lip POWER and HOME sit down inside. Both are recessed on the real
-; shell, and neither can be bored here — the body is one closed loft, so nothing
-; below its top face can be seen at all.
-;
-; So the recess is built the other way up: a raised LIP whose crown clears the cap
-; it surrounds, which reads as a dish because the cap is the lower of the two. It
-; has to be a RING and not a disc — a solid disc of larger radius simply swallows
-; the cap, which is what made HOME a featureless grey plate. The tube is
-; (outer - inner) / 2 = 0.8 mm, so each lip stands 0.8 mm off its centre line and
-; 0.4 mm above the cap in its mouth.
-[sub_resource type="StandardMaterial3D" id="Mat_well"]
-albedo_color = Color(0.74, 0.745, 0.76, 1)
-metallic_specular = 0.4
-roughness = 0.55
+[sub_resource type="StandardMaterial3D" id="Mat_dark"]
+albedo_color = Color(0.1, 0.1, 0.11, 1)
 
 [sub_resource type="TorusMesh" id="Torus_power_lip"]
 inner_radius = 0.0028
@@ -161,34 +51,20 @@ outer_radius = 0.0044
 rings = 20
 ring_segments = 6
 
+[sub_resource type="StandardMaterial3D" id="Mat_well"]
+albedo_color = Color(0.74, 0.745, 0.76, 1)
+metallic_specular = 0.4
+roughness = 0.55
+
 [sub_resource type="TorusMesh" id="Torus_home_lip"]
 inner_radius = 0.004
 outer_radius = 0.0056
 rings = 20
 ring_segments = 6
 
-; One speaker hole / LED index pip. Every dot on the face is this mesh under a
-; MultiMesh: 36 of them, one draw call. Separate MeshInstance3Ds would be 36
-; draws per remote on a CPU-bound headset, for detail 1 mm across.
-[sub_resource type="CylinderMesh" id="Cyl_hole"]
-top_radius = 0.0004
-bottom_radius = 0.0004
-height = 0.0004
-radial_segments = 6
-rings = 1
-
-[sub_resource type="StandardMaterial3D" id="Mat_hole"]
-albedo_color = Color(0.22, 0.22, 0.24, 1)
-roughness = 0.8
-
-; 26 speaker holes in an oval below the +/- row, then the 1/2/3/4 pips printed
-; over the player LEDs. Positions are generated, not hand-typed — see the
-; corresponding block in Tools if these ever need regenerating.
-[sub_resource type="MultiMesh" id="MM_face_dots"]
-transform_format = 1
-instance_count = 36
-mesh = SubResource("Cyl_hole")
-buffer = PackedFloat32Array(1, 0, 0, -0.0017, 0, 1, 0, 0, 0, 0, 1, 0.0205, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0.0205, 1, 0, 0, 0.0017, 0, 1, 0, 0, 0, 0, 1, 0.0205, 1, 0, 0, -0.0034, 0, 1, 0, 0, 0, 0, 1, 0.0227, 1, 0, 0, -0.0017, 0, 1, 0, 0, 0, 0, 1, 0.0227, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0.0227, 1, 0, 0, 0.0017, 0, 1, 0, 0, 0, 0, 1, 0.0227, 1, 0, 0, 0.0034, 0, 1, 0, 0, 0, 0, 1, 0.0227, 1, 0, 0, -0.0034, 0, 1, 0, 0, 0, 0, 1, 0.0249, 1, 0, 0, -0.0017, 0, 1, 0, 0, 0, 0, 1, 0.0249, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0.0249, 1, 0, 0, 0.0017, 0, 1, 0, 0, 0, 0, 1, 0.0249, 1, 0, 0, 0.0034, 0, 1, 0, 0, 0, 0, 1, 0.0249, 1, 0, 0, -0.0034, 0, 1, 0, 0, 0, 0, 1, 0.0271, 1, 0, 0, -0.0017, 0, 1, 0, 0, 0, 0, 1, 0.0271, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0.0271, 1, 0, 0, 0.0017, 0, 1, 0, 0, 0, 0, 1, 0.0271, 1, 0, 0, 0.0034, 0, 1, 0, 0, 0, 0, 1, 0.0271, 1, 0, 0, -0.0034, 0, 1, 0, 0, 0, 0, 1, 0.0293, 1, 0, 0, -0.0017, 0, 1, 0, 0, 0, 0, 1, 0.0293, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0.0293, 1, 0, 0, 0.0017, 0, 1, 0, 0, 0, 0, 1, 0.0293, 1, 0, 0, 0.0034, 0, 1, 0, 0, 0, 0, 1, 0.0293, 1, 0, 0, -0.0017, 0, 1, 0, 0, 0, 0, 1, 0.0315, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0.0315, 1, 0, 0, 0.0017, 0, 1, 0, 0, 0, 0, 1, 0.0315, 1, 0, 0, -0.0105, 0, 1, 0, 0, 0, 0, 1, 0.0658, 1, 0, 0, -0.00415, 0, 1, 0, 0, 0, 0, 1, 0.0658, 1, 0, 0, -0.00285, 0, 1, 0, 0, 0, 0, 1, 0.0658, 1, 0, 0, 0.0022, 0, 1, 0, 0, 0, 0, 1, 0.0658, 1, 0, 0, 0.0035, 0, 1, 0, 0, 0, 0, 1, 0.0658, 1, 0, 0, 0.0048, 0, 1, 0, 0, 0, 0, 1, 0.0658, 1, 0, 0, 0.00855, 0, 1, 0, 0, 0, 0, 1, 0.0658, 1, 0, 0, 0.00985, 0, 1, 0, 0, 0, 0, 1, 0.0658, 1, 0, 0, 0.01115, 0, 1, 0, 0, 0, 0, 1, 0.0658, 1, 0, 0, 0.01245, 0, 1, 0, 0, 0, 0, 1, 0.0658)
+[sub_resource type="CylinderShape3D" id="CylShape_power"]
+height = 0.004
+radius = 0.005
 
 [sub_resource type="CylinderMesh" id="Cyl_power"]
 top_radius = 0.0025
@@ -200,66 +76,136 @@ rings = 1
 [sub_resource type="StandardMaterial3D" id="Mat_power"]
 albedo_color = Color(0.45, 0.12, 0.12, 1)
 
-; The printed marks. Each texture is a 128 square with the cap filling the frame
-; (Tools/gen_wii_face_marks.py), so a quad the width of the cap prints the mark at
-; the size the CONTROLS diagram draws it — same drawing, same proportion.
-;
-; ALPHA_SCISSOR and not ALPHA: solid ink needs no gradient, and scissor keeps
-; these in the OPAQUE pass where they write depth. A transparent decal 0.1 mm off
-; a cap is a sorting question nobody wants to answer seven times per remote.
 [sub_resource type="QuadMesh" id="Quad_mark_power"]
 size = Vector2(0.005, 0.005)
-
-[sub_resource type="QuadMesh" id="Quad_mark_a"]
-size = Vector2(0.011, 0.011)
-
-[sub_resource type="QuadMesh" id="Quad_mark_small"]
-size = Vector2(0.007, 0.007)
-
-[sub_resource type="QuadMesh" id="Quad_mark_home"]
-size = Vector2(0.0072, 0.0072)
-
-[sub_resource type="QuadMesh" id="Quad_mark_num"]
-size = Vector2(0.009, 0.009)
 
 [sub_resource type="StandardMaterial3D" id="Mat_mark_power"]
 transparency = 2
 alpha_scissor_threshold = 0.5
+alpha_antialiasing_mode = 0
 albedo_texture = ExtResource("9_mk_power")
+
+[sub_resource type="BoxMesh" id="BoxMesh_dpad_h"]
+size = Vector3(0.019, 0.003, 0.0065)
+
+[sub_resource type="StandardMaterial3D" id="Mat_grey"]
+albedo_color = Color(0.72, 0.72, 0.74, 1)
+
+[sub_resource type="BoxMesh" id="BoxMesh_dpad_v"]
+size = Vector3(0.0065, 0.003, 0.019)
+
+[sub_resource type="CylinderShape3D" id="CylShape_a"]
+height = 0.005
+radius = 0.007
+
+[sub_resource type="CylinderMesh" id="Cyl_a"]
+top_radius = 0.0055
+bottom_radius = 0.0055
+height = 0.003
+radial_segments = 16
+rings = 1
+
+[sub_resource type="QuadMesh" id="Quad_mark_a"]
+size = Vector2(0.011, 0.011)
 
 [sub_resource type="StandardMaterial3D" id="Mat_mark_a"]
 transparency = 2
 alpha_scissor_threshold = 0.5
+alpha_antialiasing_mode = 0
 albedo_texture = ExtResource("9_mk_a")
+
+[sub_resource type="CylinderShape3D" id="CylShape_small"]
+height = 0.004
+radius = 0.005
+
+[sub_resource type="CylinderMesh" id="Cyl_small"]
+top_radius = 0.0035
+bottom_radius = 0.0035
+height = 0.0025
+radial_segments = 12
+rings = 1
+
+[sub_resource type="StandardMaterial3D" id="Mat_cap"]
+albedo_color = Color(0.62, 0.63, 0.66, 1)
+
+[sub_resource type="QuadMesh" id="Quad_mark_small"]
+size = Vector2(0.007, 0.007)
 
 [sub_resource type="StandardMaterial3D" id="Mat_mark_minus"]
 transparency = 2
 alpha_scissor_threshold = 0.5
+alpha_antialiasing_mode = 0
 albedo_texture = ExtResource("9_mk_minus")
+
+[sub_resource type="CylinderShape3D" id="CylShape_home"]
+height = 0.004
+radius = 0.006
+
+[sub_resource type="CylinderMesh" id="Cyl_home"]
+top_radius = 0.0036
+bottom_radius = 0.0036
+height = 0.0022
+radial_segments = 16
+rings = 1
+
+[sub_resource type="QuadMesh" id="Quad_mark_home"]
+size = Vector2(0.0072, 0.0072)
 
 [sub_resource type="StandardMaterial3D" id="Mat_mark_home"]
 transparency = 2
 alpha_scissor_threshold = 0.5
+alpha_antialiasing_mode = 0
 albedo_texture = ExtResource("9_mk_home")
 
 [sub_resource type="StandardMaterial3D" id="Mat_mark_plus"]
 transparency = 2
 alpha_scissor_threshold = 0.5
+alpha_antialiasing_mode = 0
 albedo_texture = ExtResource("9_mk_plus")
+
+[sub_resource type="StandardMaterial3D" id="Mat_hole"]
+albedo_color = Color(0.22, 0.22, 0.24, 1)
+roughness = 0.8
+
+[sub_resource type="CylinderMesh" id="Cyl_hole"]
+top_radius = 0.0004
+bottom_radius = 0.0004
+height = 0.0004
+radial_segments = 6
+rings = 1
+
+[sub_resource type="MultiMesh" id="MM_face_dots"]
+transform_format = 1
+instance_count = 36
+mesh = SubResource("Cyl_hole")
+buffer = PackedFloat32Array(1, 0, 0, -0.0017, 0, 1, 0, 0, 0, 0, 1, 0.0205, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0.0205, 1, 0, 0, 0.0017, 0, 1, 0, 0, 0, 0, 1, 0.0205, 1, 0, 0, -0.0034, 0, 1, 0, 0, 0, 0, 1, 0.0227, 1, 0, 0, -0.0017, 0, 1, 0, 0, 0, 0, 1, 0.0227, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0.0227, 1, 0, 0, 0.0017, 0, 1, 0, 0, 0, 0, 1, 0.0227, 1, 0, 0, 0.0034, 0, 1, 0, 0, 0, 0, 1, 0.0227, 1, 0, 0, -0.0034, 0, 1, 0, 0, 0, 0, 1, 0.0249, 1, 0, 0, -0.0017, 0, 1, 0, 0, 0, 0, 1, 0.0249, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0.0249, 1, 0, 0, 0.0017, 0, 1, 0, 0, 0, 0, 1, 0.0249, 1, 0, 0, 0.0034, 0, 1, 0, 0, 0, 0, 1, 0.0249, 1, 0, 0, -0.0034, 0, 1, 0, 0, 0, 0, 1, 0.0271, 1, 0, 0, -0.0017, 0, 1, 0, 0, 0, 0, 1, 0.0271, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0.0271, 1, 0, 0, 0.0017, 0, 1, 0, 0, 0, 0, 1, 0.0271, 1, 0, 0, 0.0034, 0, 1, 0, 0, 0, 0, 1, 0.0271, 1, 0, 0, -0.0034, 0, 1, 0, 0, 0, 0, 1, 0.0293, 1, 0, 0, -0.0017, 0, 1, 0, 0, 0, 0, 1, 0.0293, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0.0293, 1, 0, 0, 0.0017, 0, 1, 0, 0, 0, 0, 1, 0.0293, 1, 0, 0, 0.0034, 0, 1, 0, 0, 0, 0, 1, 0.0293, 1, 0, 0, -0.0017, 0, 1, 0, 0, 0, 0, 1, 0.0315, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0.0315, 1, 0, 0, 0.0017, 0, 1, 0, 0, 0, 0, 1, 0.0315, 1, 0, 0, -0.0105, 0, 1, 0, 0, 0, 0, 1, 0.0658, 1, 0, 0, -0.00415, 0, 1, 0, 0, 0, 0, 1, 0.0658, 1, 0, 0, -0.00285, 0, 1, 0, 0, 0, 0, 1, 0.0658, 1, 0, 0, 0.0022, 0, 1, 0, 0, 0, 0, 1, 0.0658, 1, 0, 0, 0.0035, 0, 1, 0, 0, 0, 0, 1, 0.0658, 1, 0, 0, 0.0048, 0, 1, 0, 0, 0, 0, 1, 0.0658, 1, 0, 0, 0.00855, 0, 1, 0, 0, 0, 0, 1, 0.0658, 1, 0, 0, 0.00985, 0, 1, 0, 0, 0, 0, 1, 0.0658, 1, 0, 0, 0.01115, 0, 1, 0, 0, 0, 0, 1, 0.0658, 1, 0, 0, 0.01245, 0, 1, 0, 0, 0, 0, 1, 0.0658)
+
+[sub_resource type="CylinderShape3D" id="CylShape_num"]
+height = 0.004
+radius = 0.006
+
+[sub_resource type="CylinderMesh" id="Cyl_num"]
+top_radius = 0.0045
+bottom_radius = 0.0045
+height = 0.0025
+radial_segments = 12
+rings = 1
+
+[sub_resource type="QuadMesh" id="Quad_mark_num"]
+size = Vector2(0.009, 0.009)
 
 [sub_resource type="StandardMaterial3D" id="Mat_mark_one"]
 transparency = 2
 alpha_scissor_threshold = 0.5
+alpha_antialiasing_mode = 0
 albedo_texture = ExtResource("9_mk_one")
 
 [sub_resource type="StandardMaterial3D" id="Mat_mark_two"]
 transparency = 2
 alpha_scissor_threshold = 0.5
+alpha_antialiasing_mode = 0
 albedo_texture = ExtResource("9_mk_two")
 
-
-; One player LED lens. Duplicated four times across the butt end; wiimote.gd
-; gives each its own material at _ready so they can light independently.
 [sub_resource type="BoxMesh" id="BoxMesh_led"]
 size = Vector3(0.004, 0.001, 0.002)
 
@@ -269,17 +215,10 @@ albedo_color = Color(0.06, 0.07, 0.12, 1)
 [sub_resource type="BoxShape3D" id="BoxShape3D_cover"]
 size = Vector3(0.032, 0.008, 0.058)
 
-; SYNC is the one red thing on the remote, so it gets its own material rather than
-; the grey the 1/2/-/+ caps share. Its whole job is to be findable in a recess the
-; player has just opened a lid to reach.
-[sub_resource type="StandardMaterial3D" id="Mat_sync"]
-albedo_color = Color(0.72, 0.13, 0.11, 1)
-roughness = 0.5
+[sub_resource type="CylinderShape3D" id="CylShape_sync"]
+height = 0.006
+radius = 0.005
 
-; ROUND, and 1 mm thick rather than 2. It stands proud of the BAY FLOOR now rather
-; than of the shell's outer skin, and the floor is only 1.2 mm above the cover's
-; inner face. A CylinderMesh is +Y-aligned by default, which is already the axis
-; this button travels on, so it needs no rotation of its own.
 [sub_resource type="CylinderMesh" id="CylMesh_sync"]
 top_radius = 0.004
 bottom_radius = 0.004
@@ -287,11 +226,10 @@ height = 0.001
 radial_segments = 20
 rings = 1
 
-[sub_resource type="CylinderShape3D" id="CylShape_sync"]
-radius = 0.005
-height = 0.006
+[sub_resource type="StandardMaterial3D" id="Mat_sync"]
+albedo_color = Color(0.72, 0.13, 0.11, 1)
+roughness = 0.5
 
-; The expansion socket at the butt, and the recess drawn inside it.
 [sub_resource type="BoxMesh" id="BoxMesh_expansion"]
 size = Vector3(0.014, 0.006, 0.004)
 
@@ -306,12 +244,10 @@ emission_enabled = true
 emission = Color(0.7, 0.85, 1, 1)
 emission_energy_multiplier = 2.0
 
-; Laser target, generous like the light gun's — a remote is a slim thing to hit
-; with a beam from across the room, and this only ever answers the pointer.
 [sub_resource type="BoxShape3D" id="BoxShape3D_pointer"]
 size = Vector3(0.06, 0.06, 0.17)
 
-[node name="Wiimote" type="RigidBody3D" groups=["hand_held_device"]]
+[node name="Wiimote" type="RigidBody3D" unique_id=2035780250 groups=["hand_held_device"]]
 collision_layer = 4
 collision_mask = 196613
 mass = 0.15
@@ -321,470 +257,313 @@ linear_damp = 5.0
 angular_damp = 8.0
 script = ExtResource("1_wmscript")
 
-[node name="CollisionShape3D" type="CollisionShape3D" parent="."]
+[node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=862073052]
 shape = SubResource("BoxShape3D_body")
 
-[node name="Body" type="MeshInstance3D" parent="."]
+[node name="Body" type="MeshInstance3D" parent="." unique_id=488627876]
 mesh = ExtResource("20_shell")
 surface_material_override/0 = SubResource("Mat_shell")
 
-[node name="Seam" type="MeshInstance3D" parent="." groups=["outline_exclude"]]
+[node name="Seam" type="MeshInstance3D" parent="." unique_id=1406235274 groups=["outline_exclude"]]
 mesh = ExtResource("20_seam")
 surface_material_override/0 = SubResource("Mat_seam")
 
-[node name="IRWindow" type="MeshInstance3D" parent="."]
+[node name="IRWindow" type="MeshInstance3D" parent="." unique_id=418266723]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -0.0735)
 mesh = SubResource("BoxMesh_ir")
 surface_material_override/0 = SubResource("Mat_dark")
 
-; -Z is the IR axis. Everything the pointer does is cast from here, not from the
-; hand: the remote is a pickable and the grab point can hold it at any angle.
-[node name="BarrelTip" type="Node3D" parent="."]
+[node name="BarrelTip" type="Node3D" parent="." unique_id=917922079]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -0.078)
 
-; The lips around POWER and HOME. Plain meshes: they are moulded into the shell
-; and nothing presses them.
-[node name="PowerWell" type="MeshInstance3D" parent="."]
+[node name="PowerWell" type="MeshInstance3D" parent="." unique_id=235370057]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.0095, 0.0155, -0.066)
 mesh = SubResource("Torus_power_lip")
 surface_material_override/0 = SubResource("Mat_well")
 
-[node name="HomeWell" type="MeshInstance3D" parent="."]
+[node name="HomeWell" type="MeshInstance3D" parent="." unique_id=190844312]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.0157, 0.004)
 mesh = SubResource("Torus_home_lip")
 surface_material_override/0 = SubResource("Mat_well")
 
-; POWER, in the TOP LEFT CORNER where the hardware puts it — about 9 mm in from
-; the left edge and 8 mm down from the tip, on the same side as MINUS below it
-; (-X is the player's left when the barrel points at the set). A VRButton like the
-; face caps rather than a bare mesh: it is worked by a finger and nothing else, so
-; it needs the poke volume. Nothing binds to it and it reaches no core;
-; wiimote.gd reads how long it is HELD.
-[node name="PowerButton" type="Area3D" parent="."]
+[node name="PowerButton" type="Area3D" parent="." unique_id=593853606]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.0095, 0.0158, -0.066)
 collision_layer = 0
 collision_mask = 0
 script = ExtResource("7_vrbtn")
 trigger_radius = 0.007
-depress_depth = 0.0008
 contact_margin = 0.004
+depress_depth = 0.0008
 
-[node name="CollisionShape3D" type="CollisionShape3D" parent="PowerButton"]
+[node name="CollisionShape3D" type="CollisionShape3D" parent="PowerButton" unique_id=1872826237]
 shape = SubResource("CylShape_power")
 
-; Down 1.1 mm, which puts its crown 0.4 mm under the lip's — and still 0.9 mm
-; clear of the face when pressed, so the travel never sinks into the shell (where
-; the box's own top surface would hide it outright).
-[node name="ButtonMesh" type="MeshInstance3D" parent="PowerButton"]
+[node name="ButtonMesh" type="MeshInstance3D" parent="PowerButton" unique_id=71849235]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.0011, 0)
 mesh = SubResource("Cyl_power")
 surface_material_override/0 = SubResource("Mat_power")
 
-; Ink, printed on the cap and travelling with it. -90 deg about X lays the quad
-; face-up with its own +Y toward the IR end, which is the way you read a remote
-; that is pointing at the set.
-[node name="Mark" type="MeshInstance3D" parent="PowerButton/ButtonMesh" groups=["outline_exclude"]]
-position = Vector3(0, 0.0011, 0)
-rotation = Vector3(-1.5707963, 0, 0)
+[node name="Mark" type="MeshInstance3D" parent="PowerButton/ButtonMesh" unique_id=1929939262 groups=["outline_exclude"]]
+transform = Transform3D(1, 0, 0, 0, 7.54979e-08, 1, 0, -1, 7.54979e-08, 0, 0.0011, 0)
 cast_shadow = 0
 mesh = SubResource("Quad_mark_power")
 surface_material_override/0 = SubResource("Mat_mark_power")
 
-[node name="DPad" type="Node3D" parent="."]
+[node name="DPad" type="Node3D" parent="." unique_id=980686422]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.0155, -0.044)
 
-[node name="Horizontal" type="MeshInstance3D" parent="DPad"]
+[node name="Horizontal" type="MeshInstance3D" parent="DPad" unique_id=273168180]
 mesh = SubResource("BoxMesh_dpad_h")
 surface_material_override/0 = SubResource("Mat_grey")
 
-[node name="Vertical" type="MeshInstance3D" parent="DPad"]
+[node name="Vertical" type="MeshInstance3D" parent="DPad" unique_id=640253265]
 mesh = SubResource("BoxMesh_dpad_v")
 surface_material_override/0 = SubResource("Mat_grey")
 
-; The six face buttons are VRButtons, not plain meshes. One VR hand carries five
-; usable inputs and this remote has seven buttons plus a d-pad, so the hand
-; binding alone can never reach all of them — 1, 2 and - had nothing to sit on.
-; Making the shell itself pokeable closes that the way the hardware does: hold
-; the remote in one hand, press the awkward ones with the other. PokeTip gates on
-; a hand that is NOT holding something, so a remote can never press its own
-; buttons with the hand carrying it.
-;
-; They press DOWN into the top face (-Y), and each is its own Area3D with the cap
-; as its ButtonMesh child so VRButton drives the depress animation itself.
-[node name="AButton" type="Area3D" parent="."]
+[node name="AButton" type="Area3D" parent="." unique_id=1361818201]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.0155, -0.018)
 collision_layer = 0
 collision_mask = 0
 script = ExtResource("7_vrbtn")
 trigger_radius = 0.011
-depress_depth = 0.0012
 contact_margin = 0.006
+depress_depth = 0.0012
 
-[node name="CollisionShape3D" type="CollisionShape3D" parent="AButton"]
+[node name="CollisionShape3D" type="CollisionShape3D" parent="AButton" unique_id=831118858]
 shape = SubResource("CylShape_a")
 
-[node name="ButtonMesh" type="MeshInstance3D" parent="AButton"]
+[node name="ButtonMesh" type="MeshInstance3D" parent="AButton" unique_id=1480802079]
 mesh = SubResource("Cyl_a")
 surface_material_override/0 = SubResource("Mat_grey")
 
-[node name="Mark" type="MeshInstance3D" parent="AButton/ButtonMesh" groups=["outline_exclude"]]
-position = Vector3(0, 0.0016, 0)
-rotation = Vector3(-1.5707963, 0, 0)
+[node name="Mark" type="MeshInstance3D" parent="AButton/ButtonMesh" unique_id=760822199 groups=["outline_exclude"]]
+transform = Transform3D(1, 0, 0, 0, 7.54979e-08, 1, 0, -1, 7.54979e-08, 0, 0.0016, 0)
 cast_shadow = 0
 mesh = SubResource("Quad_mark_a")
 surface_material_override/0 = SubResource("Mat_mark_a")
 
-[node name="MinusButton" type="Area3D" parent="."]
+[node name="MinusButton" type="Area3D" parent="." unique_id=1406949009]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.011, 0.0155, 0.004)
 collision_layer = 0
 collision_mask = 0
 script = ExtResource("7_vrbtn")
 trigger_radius = 0.008
-depress_depth = 0.001
 contact_margin = 0.005
+depress_depth = 0.001
 
-[node name="CollisionShape3D" type="CollisionShape3D" parent="MinusButton"]
+[node name="CollisionShape3D" type="CollisionShape3D" parent="MinusButton" unique_id=2003535135]
 shape = SubResource("CylShape_small")
 
-[node name="ButtonMesh" type="MeshInstance3D" parent="MinusButton"]
+[node name="ButtonMesh" type="MeshInstance3D" parent="MinusButton" unique_id=752957119]
 mesh = SubResource("Cyl_small")
 surface_material_override/0 = SubResource("Mat_cap")
 
-[node name="Mark" type="MeshInstance3D" parent="MinusButton/ButtonMesh" groups=["outline_exclude"]]
-position = Vector3(0, 0.00135, 0)
-rotation = Vector3(-1.5707963, 0, 0)
+[node name="Mark" type="MeshInstance3D" parent="MinusButton/ButtonMesh" unique_id=1057503047 groups=["outline_exclude"]]
+transform = Transform3D(1, 0, 0, 0, 7.54979e-08, 1, 0, -1, 7.54979e-08, 0, 0.00135, 0)
 cast_shadow = 0
 mesh = SubResource("Quad_mark_small")
 surface_material_override/0 = SubResource("Mat_mark_minus")
 
-[node name="HomeButton" type="Area3D" parent="."]
+[node name="HomeButton" type="Area3D" parent="." unique_id=1753367519]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.0155, 0.004)
 collision_layer = 0
 collision_mask = 0
 script = ExtResource("7_vrbtn")
 trigger_radius = 0.009
-depress_depth = 0.001
 contact_margin = 0.005
+depress_depth = 0.001
 
-[node name="CollisionShape3D" type="CollisionShape3D" parent="HomeButton"]
+[node name="CollisionShape3D" type="CollisionShape3D" parent="HomeButton" unique_id=195011664]
 shape = SubResource("CylShape_home")
 
-[node name="ButtonMesh" type="MeshInstance3D" parent="HomeButton"]
+[node name="ButtonMesh" type="MeshInstance3D" parent="HomeButton" unique_id=2037552910]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.0005, 0)
 mesh = SubResource("Cyl_home")
 surface_material_override/0 = SubResource("Mat_cap")
 
-[node name="Mark" type="MeshInstance3D" parent="HomeButton/ButtonMesh" groups=["outline_exclude"]]
-position = Vector3(0, 0.0012, 0)
-rotation = Vector3(-1.5707963, 0, 0)
+[node name="Mark" type="MeshInstance3D" parent="HomeButton/ButtonMesh" unique_id=776614146 groups=["outline_exclude"]]
+transform = Transform3D(1, 0, 0, 0, 7.54979e-08, 1, 0, -1, 7.54979e-08, 0, 0.0012, 0)
 cast_shadow = 0
 mesh = SubResource("Quad_mark_home")
 surface_material_override/0 = SubResource("Mat_mark_home")
 
-[node name="PlusButton" type="Area3D" parent="."]
+[node name="PlusButton" type="Area3D" parent="." unique_id=1142119945]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.011, 0.0155, 0.004)
 collision_layer = 0
 collision_mask = 0
 script = ExtResource("7_vrbtn")
 trigger_radius = 0.008
-depress_depth = 0.001
 contact_margin = 0.005
+depress_depth = 0.001
 
-[node name="CollisionShape3D" type="CollisionShape3D" parent="PlusButton"]
+[node name="CollisionShape3D" type="CollisionShape3D" parent="PlusButton" unique_id=640596859]
 shape = SubResource("CylShape_small")
 
-[node name="ButtonMesh" type="MeshInstance3D" parent="PlusButton"]
+[node name="ButtonMesh" type="MeshInstance3D" parent="PlusButton" unique_id=275967293]
 mesh = SubResource("Cyl_small")
 surface_material_override/0 = SubResource("Mat_cap")
 
-[node name="Mark" type="MeshInstance3D" parent="PlusButton/ButtonMesh" groups=["outline_exclude"]]
-position = Vector3(0, 0.00135, 0)
-rotation = Vector3(-1.5707963, 0, 0)
+[node name="Mark" type="MeshInstance3D" parent="PlusButton/ButtonMesh" unique_id=1149975811 groups=["outline_exclude"]]
+transform = Transform3D(1, 0, 0, 0, 7.54979e-08, 1, 0, -1, 7.54979e-08, 0, 0.00135, 0)
 cast_shadow = 0
 mesh = SubResource("Quad_mark_small")
 surface_material_override/0 = SubResource("Mat_mark_plus")
 
-; The speaker sits between the +/- row and 1, and until it was drawn 1, 2 and the
-; player LEDs had all slid forward into its space. They are back where the
-; hardware has them, which is what makes the lower face read as a Wii Remote.
-; Barely proud — 0.25 mm. A dot standing half a millimetre off the shell throws
-; its own shadow at any raking angle and reads as a STUD, which is the opposite of
-; a hole; near-flush, the dark material does the work on its own.
-[node name="FaceDots" type="MultiMeshInstance3D" parent="."]
+[node name="FaceDots" type="MultiMeshInstance3D" parent="." unique_id=826327150]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.015, 0)
-multimesh = SubResource("MM_face_dots")
 material_override = SubResource("Mat_hole")
+multimesh = SubResource("MM_face_dots")
 
-[node name="OneButton" type="Area3D" parent="."]
+[node name="OneButton" type="Area3D" parent="." unique_id=521786268]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.0155, 0.045)
 collision_layer = 0
 collision_mask = 0
 script = ExtResource("7_vrbtn")
 trigger_radius = 0.009
-depress_depth = 0.001
 contact_margin = 0.005
+depress_depth = 0.001
 
-[node name="CollisionShape3D" type="CollisionShape3D" parent="OneButton"]
+[node name="CollisionShape3D" type="CollisionShape3D" parent="OneButton" unique_id=891083286]
 shape = SubResource("CylShape_num")
 
-[node name="ButtonMesh" type="MeshInstance3D" parent="OneButton"]
+[node name="ButtonMesh" type="MeshInstance3D" parent="OneButton" unique_id=1509548492]
 mesh = SubResource("Cyl_num")
 surface_material_override/0 = SubResource("Mat_cap")
 
-[node name="Mark" type="MeshInstance3D" parent="OneButton/ButtonMesh" groups=["outline_exclude"]]
-position = Vector3(0, 0.00135, 0)
-rotation = Vector3(-1.5707963, 0, 0)
+[node name="Mark" type="MeshInstance3D" parent="OneButton/ButtonMesh" unique_id=848377398 groups=["outline_exclude"]]
+transform = Transform3D(1, 0, 0, 0, 7.54979e-08, 1, 0, -1, 7.54979e-08, 0, 0.00135, 0)
 cast_shadow = 0
 mesh = SubResource("Quad_mark_num")
 surface_material_override/0 = SubResource("Mat_mark_one")
 
-[node name="TwoButton" type="Area3D" parent="."]
+[node name="TwoButton" type="Area3D" parent="." unique_id=962808351]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.0155, 0.058)
 collision_layer = 0
 collision_mask = 0
 script = ExtResource("7_vrbtn")
 trigger_radius = 0.009
-depress_depth = 0.001
 contact_margin = 0.005
+depress_depth = 0.001
 
-[node name="CollisionShape3D" type="CollisionShape3D" parent="TwoButton"]
+[node name="CollisionShape3D" type="CollisionShape3D" parent="TwoButton" unique_id=270171430]
 shape = SubResource("CylShape_num")
 
-[node name="ButtonMesh" type="MeshInstance3D" parent="TwoButton"]
+[node name="ButtonMesh" type="MeshInstance3D" parent="TwoButton" unique_id=1773752662]
 mesh = SubResource("Cyl_num")
 surface_material_override/0 = SubResource("Mat_cap")
 
-[node name="Mark" type="MeshInstance3D" parent="TwoButton/ButtonMesh" groups=["outline_exclude"]]
-position = Vector3(0, 0.00135, 0)
-rotation = Vector3(-1.5707963, 0, 0)
+[node name="Mark" type="MeshInstance3D" parent="TwoButton/ButtonMesh" unique_id=888314676 groups=["outline_exclude"]]
+transform = Transform3D(1, 0, 0, 0, 7.54979e-08, 1, 0, -1, 7.54979e-08, 0, 0.00135, 0)
 cast_shadow = 0
 mesh = SubResource("Quad_mark_num")
 surface_material_override/0 = SubResource("Mat_mark_two")
 
-[node name="PlayerLEDs" type="Node3D" parent="."]
+[node name="PlayerLEDs" type="Node3D" parent="." unique_id=1291906195]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.0152, 0.0685)
 
-[node name="LED1" type="MeshInstance3D" parent="PlayerLEDs"]
+[node name="LED1" type="MeshInstance3D" parent="PlayerLEDs" unique_id=2136514743]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.0105, 0, 0)
 mesh = SubResource("BoxMesh_led")
 surface_material_override/0 = SubResource("Mat_led")
 
-[node name="LED2" type="MeshInstance3D" parent="PlayerLEDs"]
+[node name="LED2" type="MeshInstance3D" parent="PlayerLEDs" unique_id=896399782]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.0035, 0, 0)
 mesh = SubResource("BoxMesh_led")
 surface_material_override/0 = SubResource("Mat_led")
 
-[node name="LED3" type="MeshInstance3D" parent="PlayerLEDs"]
+[node name="LED3" type="MeshInstance3D" parent="PlayerLEDs" unique_id=1502902614]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.0035, 0, 0)
 mesh = SubResource("BoxMesh_led")
 surface_material_override/0 = SubResource("Mat_led")
 
-[node name="LED4" type="MeshInstance3D" parent="PlayerLEDs"]
+[node name="LED4" type="MeshInstance3D" parent="PlayerLEDs" unique_id=533048391]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.0105, 0, 0)
 mesh = SubResource("BoxMesh_led")
 surface_material_override/0 = SubResource("Mat_led")
 
-; Hinged at the trigger's FRONT edge — its nose end — which is where the real one
-; pivots. The sign is unchanged (-16 degrees about local X, TRIGGER_PULL_DEG) and
-; so is the light gun's arrangement it was copied from; what moved is the axis.
-;
-; It used to sit at (0, -0.0135, -0.03), which after the shell gained its taper was
-; 88% of the way along the fin — near its BACK. Rotating about a point at the back
-; swings the FRONT, so a pull drove the trigger's nose 3.7 mm DOWN and out through
-; the shell: it read as the button popping out rather than being pressed. Hinged at
-; the front, the same rotation lifts the free end 4.8 mm INTO the shell, which is a
-; trigger being pressed, and the crown still stands 1.6 mm proud at full pull so it
-; does not simply vanish.
-;
-; gen_wiimote.gd mirrors this position in TRIG_PIVOT and builds the fin relative to
-; it. The two have to agree — change one and change the other.
-[node name="TriggerPivot" type="Node3D" parent="."]
+[node name="TriggerPivot" type="Node3D" parent="." unique_id=1775361938]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.005, -0.0445)
 
-; No offset: gen_wiimote.gd builds the fin in THIS frame, so its stations are the
-; positions rather than an offset from them. It runs from a tip 18 mm forward of
-; the pivot back to a root 4 mm behind it, and that root sits INSIDE the shell —
-; the fin is not booleaned out of the body, it intersects it, so starting from
-; inside is what keeps a slot from opening around its base.
-[node name="Trigger" type="MeshInstance3D" parent="TriggerPivot"]
+[node name="Trigger" type="MeshInstance3D" parent="TriggerPivot" unique_id=255948029]
 mesh = ExtResource("20_trigger")
 surface_material_override/0 = SubResource("Mat_cap")
 
-; Hinged at the bay's FRONT edge so the cover swings down and away from the shell.
-; A positive angle about the pivot's local X carries the free (+Z) end to -Y,
-; which on this underside face is outward.
-;
-; The cover used to sit at y -0.0185 — 2.5 mm below a shell whose skin was at
-; -0.015 — so it read as a slab hovering under the remote with daylight behind
-; it. It now sits IN the battery bay gen_wiimote.gd cuts into the underside, with
-; its outer face on the skin the bay was cut out of. Its shape is that skin, so
-; it cannot gap against a surface that is flat over the middle and arced at the
-; edges; that mismatch is why a flat 30 mm box could never sit down on this shell.
-;
-; This transform mirrors BAY_Z0 and the skin height there. Change either and
-; re-run the generator, which prints the hinge it expects.
-[node name="CoverPivot" type="Node3D" parent="."]
+[node name="CoverPivot" type="Node3D" parent="." unique_id=1298910762]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.0149, -0.012)
 
-[node name="CoverMesh" type="MeshInstance3D" parent="CoverPivot"]
+[node name="CoverMesh" type="MeshInstance3D" parent="CoverPivot" unique_id=2077439746]
 mesh = ExtResource("20_cover")
 surface_material_override/0 = SubResource("Mat_shell")
 
-; VRHinge is an Area3D that ROTATES A SEPARATE TARGET, so the grab region and the
-; moving part are two nodes. It latches on the TRIGGER and requires a hand that is
-; not already holding something — so the hand carrying the remote can never flip its
-; own cover, which is exactly right. Use the other hand.
-;
-; A CHILD of the pivot it drives, not a sibling of it. Two nodes does NOT mean two
-; frames: parented outside, the zone stayed nailed to the shut position while the
-; cover swung away from under it, so once the lid was open the grab box was over bare
-; shell and the lid's actual free end had nothing on it. Inside, the box rides the
-; cover and stays on the corner you reached for. Same shape RetroSystemModelWii's SD
-; door uses, and for the same reason.
-;
-; `target` is still the pivot — now this node's own parent. VRHinge writes
-; target.rotation.x and Euler rotation composes in the TARGET's parent frame, which is
-; the remote root either way, so moving the hinge inside changes the grab box's frame
-; and nothing about the axis it swings on.
-;
-; Offsets are the old ones less CoverPivot's own (0, -0.0185, 0.014), so the box has
-; not moved while the cover is shut.
-;
-; The grab box sits at the cover's FREE end, not over its middle. SYNC lives under
-; the same panel, and a hinge whose engage sphere reached it meant a trigger pull
-; aimed at the button swung the cover shut instead. Pulled back to the butt and
-; tightened to 22 mm, the two no longer overlap: 32 mm of cover separates them.
-[node name="BatteryCover" type="Area3D" parent="CoverPivot" node_paths=PackedStringArray("target")]
+[node name="BatteryCover" type="Area3D" parent="CoverPivot" unique_id=1021499179 node_paths=PackedStringArray("target")]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.004, 0.076)
 collision_layer = 0
 collision_mask = 0
 script = ExtResource("8_vrhinge")
 target = NodePath("..")
-min_deg = 0.0
 max_deg = 105.0
 engage_radius = 0.03
 
-[node name="CollisionShape3D" type="CollisionShape3D" parent="CoverPivot/BatteryCover"]
+[node name="CollisionShape3D" type="CollisionShape3D" parent="CoverPivot/BatteryCover" unique_id=2131649599]
 shape = SubResource("BoxShape3D_cover")
 
-; Its cap has to break the back FACE (y -0.015) to exist at all. At the shell's
-; own depth it was geometrically inside an opaque box: invisible with the cover
-; open, and with nothing standing proud for a fingertip to find. It now sits flush
-; at the top and 2 mm proud, with the cover clearing it by 1 mm when shut.
-[node name="SyncButton" type="Area3D" parent="."]
+[node name="SyncButton" type="Area3D" parent="." unique_id=284873252]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.006, -0.0125, 0.056)
 collision_layer = 0
 collision_mask = 0
-;
-; A POKE, like the face caps, not a trigger pull. TOUCH mode's test is a plain
-; sphere about the Area's origin, so a button facing DOWN needs no special
-; handling — depress_axis only says which way the cap travels once it fires.
-;
-; Two things make this safe, and neither is a coincidence of geometry:
-;
-;   * A shut cover really does cover it. wiimote.gd calls set_active(false) at
-;     ready and only re-arms at COVER_OPEN_DEG, so there is no reaching through
-;     the lid — which matters far more for a touch than it did for a trigger,
-;     because touch has no line of sight either.
-;   * It cannot be fired by reaching for the cover, and that survives having been
-;     moved into the cover's own corner. The two are 10 mm apart with the lid shut
-;     — but SYNC is DEAD shut, and by the 45 degrees it needs to be live at all
-;     the hinge has swung to (0, -71.5, 38.9) mm, 62 mm from this cap. A 30 mm
-;     engage sphere and a 9 mm touch sphere leave 23 mm of air between them.
-;
-; It also retires the conflict the old arrangement was built around: a trigger
-; pull aimed here used to swing the cover shut instead. Touch and trigger are
-; different gestures, so the two can no longer be confused for one another.
-;
-; TRAVEL IS 0.6 mm, and it is capped by how proud the cap is rather than by feel.
-; gen_wiimote.gd's own table puts the bay floor at -0.0120 and this cap at
-; -0.0130 .. -0.0120, so it stands exactly 1 mm out of the floor; vr_button.gd
-; moves the mesh by depress_axis * depress_depth, so the 1.5 mm it used to have
-; carried the whole cap to -0.0115 .. -0.0105 -- above the floor, swallowed by the
-; shell, and reading as a button that falls through the remote when pressed.
-;
-; It cannot be fixed by standing the cap prouder instead: the shut cover's inner
-; face is at -0.0132 and the cap's outer face at -0.0130, so there is 0.2 mm
-; between them and nowhere to go. 0.6 mm leaves 0.4 mm of cap still showing at
-; full press.
 script = ExtResource("7_vrbtn")
-depress_axis = Vector3(0, 1, 0)
-depress_depth = 0.0006
 trigger_radius = 0.009
 contact_margin = 0.006
+depress_depth = 0.0006
+depress_axis = Vector3(0, 1, 0)
 
-[node name="CollisionShape3D" type="CollisionShape3D" parent="SyncButton"]
+[node name="CollisionShape3D" type="CollisionShape3D" parent="SyncButton" unique_id=641642489]
 shape = SubResource("CylShape_sync")
 
-[node name="ButtonMesh" type="MeshInstance3D" parent="SyncButton"]
+[node name="ButtonMesh" type="MeshInstance3D" parent="SyncButton" unique_id=756125653]
 mesh = SubResource("CylMesh_sync")
 surface_material_override/0 = SubResource("Mat_sync")
 
-; Faces DOWN (-Y), because that is the side of the remote this button is on.
-; Copied from a top-face cap it faced +Y instead, and a Label3D is double-sided,
-; so it did not vanish — it showed its back and read mirrored. Text runs up
-; toward the remote's front, which is the way round it falls when you tilt the
-; underside toward you.
-; Offset back to the bay's centreline and toward the nose, which the button no
-; longer is. "SYNC" is about 16 mm of text on a 21 mm floor, so carried along to
-; the +X corner it would run up the bay's side wall; and carried to +Z it would
-; land on the end wall, which starts easing up 2.5 mm before z = 69.
-[node name="ButtonLabel" type="Label3D" parent="SyncButton"]
+[node name="ButtonLabel" type="Label3D" parent="SyncButton" unique_id=1640100435]
 transform = Transform3D(-1, 0, 0, 0, 0, -1, 0, -1, 0, -0.006, -0.0005, -0.011)
 pixel_size = 0.0005
 text = "SYNC"
 font_size = 12
 
-; The Nunchuk's plug seats here. snap_filter is set from wiimote.gd so only the
-; nunchuk cord fits — snap_require alone would also accept a console pad's plug.
-[node name="ExpansionPort" parent="." instance=ExtResource("6_snapzone")]
+[node name="ExpansionPort" parent="." unique_id=1351643521 instance=ExtResource("6_snapzone")]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0.076)
 grab_distance = 0.03
 snap_require = "controller_plug"
 
-[node name="PortRecess" type="MeshInstance3D" parent="ExpansionPort"]
+[node name="PortRecess" type="MeshInstance3D" parent="ExpansionPort" unique_id=2003299295]
 mesh = SubResource("BoxMesh_expansion")
 surface_material_override/0 = SubResource("Mat_dark")
 
-[node name="LaserDot" type="MeshInstance3D" parent="."]
+[node name="LaserDot" type="MeshInstance3D" parent="." unique_id=79470709]
 top_level = true
 cast_shadow = 0
 mesh = SubResource("SphereMesh_dot")
 surface_material_override/0 = SubResource("Mat_dot")
 
-; Pitched 45 degrees NOSE DOWN, because held at the hand's own attitude the remote
-; sits far too flat: a Touch controller is gripped with the wrist already cocked
-; back, and a Wii Remote is not.
-;
-; The sign is not guessable and was derived, not tried. A grab driver poses the
-; object at hand * grab_point.inverse(), so the grab point carries the INVERSE of
-; the offset you want to see. The remote's nose is -Z, and a rotation about +X
-; takes +Z to -Y and so -Z to +Y -- nose UP. Wanting nose down means the object
-; needs Rx(-45), so this node carries Rx(+45).
-;
-; Written row-major, as a .tscn Transform3D always is: the rows are (1,0,0),
-; (0,cos,-sin),(0,sin,cos). Read as columns it is Rx(-45) and the remote pitches
-; up instead, which is the same trap that put four Wii ports and a Game Boy link
-; socket in backwards.
-[node name="GrabPoint" type="Marker3D" parent="."]
-transform = Transform3D(1, 0, 0, 0, 0.70710678, -0.70710678, 0, 0.70710678, 0.70710678, 0, 0, 0.012)
+[node name="GrabPoint" type="Marker3D" parent="." unique_id=841561898]
+transform = Transform3D(1, 0, 0, 0, 0.70710677, -0.70710677, 0, 0.70710677, 0.70710677, 0, 0, 0.012)
 visible = false
 script = ExtResource("3_grabpoint")
 
-[node name="PickableHighlight" type="Node3D" parent="."]
+[node name="PickableHighlight" type="Node3D" parent="." unique_id=2009095406]
 script = ExtResource("2_pickhigh")
 
-[node name="PointerArea" type="StaticBody3D" parent="."]
+[node name="PointerArea" type="StaticBody3D" parent="." unique_id=1092920673]
 collision_layer = 1048576
 collision_mask = 0
 
-[node name="CollisionShape3D" type="CollisionShape3D" parent="PointerArea"]
+[node name="CollisionShape3D" type="CollisionShape3D" parent="PointerArea" unique_id=1322727338]
 shape = SubResource("BoxShape3D_pointer")
 
-[node name="HandRight" parent="." instance=ExtResource("4_rhand")]
+[node name="HandRight" parent="." unique_id=1395988906 instance=ExtResource("4_rhand")]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0.012)
 visible = false
 
-[node name="HandLeft" parent="." instance=ExtResource("5_lhand")]
+[node name="HandLeft" parent="." unique_id=1776675038 instance=ExtResource("5_lhand")]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0.012)
 visible = false
