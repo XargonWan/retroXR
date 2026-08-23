@@ -77,6 +77,7 @@ input_right = "desktop_move_right"
 [node name="MouseCapture" parent="Staging/XROrigin3D" instance=ExtResource("18_mousecapture")]
 
 [node name="MovementDesktopCrouch" parent="Staging/XROrigin3D" instance=ExtResource("23_desktopcrouch")]
+crouch_type = 1
 
 [node name="MovementDesktopWalk" parent="Staging/XROrigin3D" instance=ExtResource("24_desktopwalk")]
 sprint_type = 1
