@@ -695,9 +695,21 @@ collision_mask = 0
 ; It also retires the conflict the old arrangement was built around: a trigger
 ; pull aimed here used to swing the cover shut instead. Touch and trigger are
 ; different gestures, so the two can no longer be confused for one another.
+;
+; TRAVEL IS 0.6 mm, and it is capped by how proud the cap is rather than by feel.
+; gen_wiimote.gd's own table puts the bay floor at -0.0120 and this cap at
+; -0.0130 .. -0.0120, so it stands exactly 1 mm out of the floor; vr_button.gd
+; moves the mesh by depress_axis * depress_depth, so the 1.5 mm it used to have
+; carried the whole cap to -0.0115 .. -0.0105 -- above the floor, swallowed by the
+; shell, and reading as a button that falls through the remote when pressed.
+;
+; It cannot be fixed by standing the cap prouder instead: the shut cover's inner
+; face is at -0.0132 and the cap's outer face at -0.0130, so there is 0.2 mm
+; between them and nowhere to go. 0.6 mm leaves 0.4 mm of cap still showing at
+; full press.
 script = ExtResource("7_vrbtn")
 depress_axis = Vector3(0, 1, 0)
-depress_depth = 0.0015
+depress_depth = 0.0006
 trigger_radius = 0.009
 contact_margin = 0.006
 
