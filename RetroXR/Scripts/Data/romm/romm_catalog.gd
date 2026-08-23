@@ -756,10 +756,8 @@ func _sync_worker(args: Dictionary) -> void:
 		exts_text += str(r["fs_ext"]) + "\n"
 		fs_bases.append(str(r["fs_base"]))
 		fs_exts.append(str(r["fs_ext"]))
-		fsnames_text += str(r["fs_base"]) + "
-"
-		regions_text += str(r["regions"]) + "
-"
+		fsnames_text += str(r["fs_base"]) + "\n"
+		regions_text += str(r["regions"]) + "\n"
 		var bytes := (line + "\n").to_utf8_buffer()
 		out.store_buffer(bytes)
 		pos += bytes.size()
@@ -988,8 +986,7 @@ static func _read_lines(path: String) -> PackedStringArray:
 		return PackedStringArray()
 	# Keep empty entries: a row with no regions writes a blank line, and dropping
 	# it would shift every later row. Only the trailing newline is discarded.
-	var parts := f.get_as_text().split("
-")
+	var parts := f.get_as_text().split("\n")
 	if parts.size() > 0 and parts[parts.size() - 1] == "":
 		parts.remove_at(parts.size() - 1)
 	return PackedStringArray(parts)

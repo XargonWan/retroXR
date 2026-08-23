@@ -1400,7 +1400,7 @@ func _romm_row_meta(systemid: String, local_path: String) -> Dictionary:
 	if _romm_meta_cache.has(local_path):
 		return _romm_meta_cache[local_path]
 
-	var manual_path := _scraped_manual_path(systemid, local_path.get_file())
+	var manual_path := RomLibrary.scraped_manual_path(systemid, local_path.get_file())
 	var meta := {
 		"game": gamelist_manager.get_game_for_rom(systemid, local_path),
 		"manual_path": manual_path,
@@ -2480,7 +2480,7 @@ func _show_rom_variants_panel(game: Dictionary, systemid: String) -> void:
 			manual_btn.text = "📖"
 			manual_btn.custom_minimum_size = Vector2(56, 56)
 			manual_btn.add_theme_font_size_override("font_size", 22)
-			var pdf_path := _scraped_manual_path(systemid, romname)
+			var pdf_path := RomLibrary.scraped_manual_path(systemid, romname)
 			manual_btn.pressed.connect(spawn_manual_requested.emit.bind(pdf_path))
 			row.add_child(manual_btn)
 
@@ -2594,17 +2594,7 @@ func _load_poster_thumb(path: String) -> Texture2D:
 func _has_scraped_manual(systemid: String, romname: String) -> bool:
 	if romname.is_empty():
 		return false
-	return FileAccess.file_exists(_scraped_manual_path(systemid, romname))
-
-
-func _scraped_manual_path(systemid: String, romname: String) -> String:
-	var base := romname.get_basename()
-	var dir := RomLibrary.rom_dir_for_system(systemid).path_join("media/manual")
-	for ext in ["pdf", "cbz"]:
-		var path := dir.path_join(base + "." + ext)
-		if FileAccess.file_exists(path):
-			return path
-	return dir.path_join(base + ".pdf")
+	return FileAccess.file_exists(RomLibrary.scraped_manual_path(systemid, romname))
 
 
 func _find_game_by_id(systemid: String, game_id: String) -> Dictionary:
