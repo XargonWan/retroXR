@@ -143,7 +143,18 @@ script = ExtResource("2_pickhigh")
 ; One plain grab point with no hand pose, copying the Nunchuk: `hand_pose` lives
 ; on XRToolsGrabPointHand, not on this script, and setting it here is the same
 ; class of mistake as the node type.
+; Yawed 180 degrees, so the LED face points away from the holder rather than back
+; at them. A grab driver poses the object at `hand * grab_point.transform.inverse()`,
+; and a half-turn about Y is its own inverse, so this reads the same whichever way
+; the basis is composed — the one rotation the .tscn row/column trap cannot bite on.
+; The 8 mm rise is untouched by it: Y is the axis being turned about.
+;
+; Nothing else reads this. The bar is the one pickable here that never enters a
+; snap zone — the console's SensorBarPort takes the LEAD's plug, not the bar — so
+; XRToolsSnapZone.snap_pose_for, which would also have been turned by this, is
+; never asked about it. led_positions() reports the two lights where they now are,
+; which is the point: turn the bar round and the aim turns with it.
 [node name="GrabPoint" type="Marker3D" parent="."]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.008, 0)
+transform = Transform3D(-1, 0, 0, 0, 1, 0, 0, 0, -1, 0, 0.008, 0)
 visible = false
 script = ExtResource("3_grabpoint")
