@@ -36,7 +36,9 @@ const B_UP := 1 << 4
 const B_DOWN := 1 << 5
 
 var rom := ""
-var boot_frames := 900       # BIOS + licence screen + intro before a menu exists
+var boot_frames := 900
+var input_check := false
+var no_cable := false       # BIOS + licence screen + intro before a menu exists
 var _a: Node = null
 var _b: Node = null
 var _pass := 0
@@ -56,6 +58,10 @@ func _ready() -> void:
 	for a in OS.get_cmdline_user_args():
 		if a.begins_with("--rom="):
 			rom = a.trim_prefix("--rom=")
+		elif a == "--no-cable":
+			no_cable = true
+		elif a == "--input-check":
+			input_check = true
 		elif a.begins_with("--boot-frames="):
 			boot_frames = int(a.trim_prefix("--boot-frames="))
 	if rom.is_empty():
@@ -70,7 +76,7 @@ func _ready() -> void:
 
 ## Hold a button on ONE machine, then release. Deliberately not applied to both
 ## at once — see the header.
-func _press(lib: Node, mask: int, frames := 8) -> void:
+func _press(lib: Node, mask: int, frames := 40) -> void:
 	lib.SetJoypadState(0, mask, 0, 0, 0, 0)
 	# Read it straight back: this separates "the write never stuck" from "the
 	# game ignored a button it did receive", which look identical on screen.
@@ -79,7 +85,7 @@ func _press(lib: Node, mask: int, frames := 8) -> void:
 		% [mask, peek[0] if peek.size() > 0 else -1, int(lib.GetFrameCount())])
 	await _wait(frames)
 	lib.SetJoypadState(0, 0, 0, 0, 0, 0)
-	await _wait(6)
+	await _wait(20)
 
 
 ## Wait `n` frames of EMULATED time, not the host's. A headless run has no audio
@@ -115,6 +121,60 @@ func _shot(name: String) -> void:
 	_shots += 1
 	pair.save_png("%s/%02d_%s.png" % [dir, _shots, name])
 	print("[psx-link] shot %02d %s  (%dx%d)" % [_shots, name, w, h])
+
+
+## Tap a button until the picture actually changes, or give up.
+##
+## Timing a PlayStation title screen from the outside does not work: WipEout
+## only takes START during part of its attract cycle, so a press of any fixed
+## length lands in the dead part often enough to look like input is broken. A
+## human solves this by pressing again. So does this.
+func _press_until_change(lib: Node, mask: int, tries := 20) -> bool:
+	var was: Image = lib.GetVideoImage()
+	for i in range(tries):
+		lib.SetJoypadState(0, mask, 0, 0, 0, 0)
+		await _wait(10)
+		lib.SetJoypadState(0, 0, 0, 0, 0, 0)
+		await _wait(40)
+		var now: Image = lib.GetVideoImage()
+		if was != null and now != null and not was.is_empty() and not now.is_empty():
+			var d0: PackedByteArray = was.get_data()
+			var d1: PackedByteArray = now.get_data()
+			var diff := 0
+			var step := 97          # sparse sample; the whole buffer is 320*256*n
+			var idx := 0
+			var seen := 0
+			while idx < d0.size() and idx < d1.size():
+				seen += 1
+				if d0[idx] != d1[idx]:
+					diff += 1
+				idx += step
+			# An animated title moves a few percent between frames. A screen
+			# CHANGE moves most of it, so the bar is set where animation cannot
+			# reach and a real transition cannot miss.
+			if seen > 0 and float(diff) / float(seen) > 0.55:
+				print("[psx-link]   screen changed after %d press(es) (%d%% moved)"
+					% [i + 1, int(100.0 * float(diff) / float(seen))])
+				return true
+	print("[psx-link]   no change after %d presses" % tries)
+	return false
+
+
+## The sequence that actually got a console off the title screen, kept verbatim
+## because it was found empirically and the reasons are the game's, not ours: a
+## long hold through the attract transition, then taps. Detecting "the screen
+## changed" does not work here -- WipEout's attract flips between the title and
+## a demo, and either flip moves most of the picture.
+func _enter_menu(lib: Node) -> void:
+	lib.SetJoypadState(0, B_START, 0, 0, 0, 0)
+	await _wait(240)
+	lib.SetJoypadState(0, 0, 0, 0, 0, 0)
+	await _wait(180)
+	for i in range(8):
+		lib.SetJoypadState(0, B_START, 0, 0, 0, 0)
+		await _wait(6)
+		lib.SetJoypadState(0, 0, 0, 0, 0, 0)
+		await _wait(24)
 
 
 func _traffic(lib: Node) -> Array:
@@ -157,33 +217,91 @@ func _run() -> void:
 	_ok("uncabled, neither sees a peer",
 		int(_a.LinkPeerCount(0)) == 0 and int(_b.LinkPeerCount(0)) == 0)
 
-	_ok("cabling them together succeeds", bool(_a.LinkConnect(_b, 0, 0)))
+	# The discriminator. If a menu is reachable uncabled and not cabled, the
+	# cable is what changed the game, not the timing of the presses.
+	if no_cable:
+		print("[psx-link] NO CABLE — control leg")
+	else:
+		_ok("cabling them together succeeds", bool(_a.LinkConnect(_b, 0, 0)))
 	await _wait(4)
 	_ok("both ends see the bus",
 		int(_a.LinkPeerCount(0)) == 2 and int(_b.LinkPeerCount(0)) == 2,
 		"A=%d B=%d" % [_a.LinkPeerCount(0), _b.LinkPeerCount(0)])
 
-	print("[psx-link] booting, shot every 300 emulated frames")
-	for i in range(8):
-		await _wait(300)
+	if input_check:
+		# ONE console, no cable, START held down hard. If this cannot leave the
+		# title screen then nothing about the link is the problem, and every
+		# menu theory above it is wasted effort.
+		await _wait(2400)
+		await _shot("ic_title")
+		print("[psx-link] holding START for 240 emulated frames")
+		_a.SetJoypadState(0, B_START, 0, 0, 0, 0)
+		await _wait(240)
+		await _shot("ic_held")
+		_a.SetJoypadState(0, 0, 0, 0, 0, 0)
+		await _wait(180)
+		await _shot("ic_released")
+		# And again, as short taps, in case the title wants an edge not a level.
+		for i in range(6):
+			_a.SetJoypadState(0, B_START, 0, 0, 0, 0)
+			await _wait(6)
+			_a.SetJoypadState(0, 0, 0, 0, 0, 0)
+			await _wait(24)
+		await _shot("ic_tapped")
+		_a.StopContent()
+		_b.StopContent()
+		await _wait(60)
+		get_tree().quit(0)
+		return
+
+	print("[psx-link] booting to the title")
+	await _wait(2400)
 	await _shot("at_title")
 
 	var before := [_traffic(_a), _traffic(_b)]
-	print("[psx-link] traffic at menu: A=%s B=%s" % [before[0], before[1]])
+	print("[psx-link] traffic at title: A=%s B=%s" % [before[0], before[1]])
 
-	# The title sits on PRESS START. Get both into the menu, then step DOWN one
-	# entry at a time and photograph each, so the menu can be READ before it is
-	# navigated. Driven one machine at a time throughout — see the header.
-	await _press(_a, B_START, 10)
-	await _wait(60)
-	await _press(_b, B_START, 10)
+	# Into the menu, one machine at a time, with a hold long enough that the
+	# title screen actually takes it.
+	print("[psx-link] machine A into the menu")
+	await _enter_menu(_a)
+	await _shot("a_entered")
+	print("[psx-link] machine B into the menu")
+	await _enter_menu(_b)
 	await _wait(240)
 	await _shot("after_start")
 
-	for step in range(7):
-		await _press(_a, B_DOWN, 8)
-		await _wait(45)
-		await _shot("menu_down_%d" % step)
+	# SELECT NUMBER OF PLAYERS: ONE PLAYER / TWO PLAYER / OPTIONS, confirmed
+	# with Cross. One DOWN moves off ONE PLAYER onto TWO PLAYER. Both consoles
+	# have to choose it -- a linked race is two machines each in two-player
+	# mode, not one host offering it.
+	for m in [_a, _b]:
+		m.SetJoypadState(0, B_DOWN, 0, 0, 0, 0)
+		await _wait(10)
+		m.SetJoypadState(0, 0, 0, 0, 0, 0)
+		await _wait(40)
+	await _shot("two_player_highlighted")
+
+	for m in [_a, _b]:
+		m.SetJoypadState(0, B_CROSS, 0, 0, 0, 0)
+		await _wait(10)
+		m.SetJoypadState(0, 0, 0, 0, 0, 0)
+		await _wait(120)
+	await _shot("two_player_chosen")
+
+	# Class, team, track: each player confirms their own, and the two consoles
+	# are deliberately at different points in the flow, so both get pressed
+	# every round rather than in lockstep.
+	for i in range(9):
+		for m in [_a, _b]:
+			m.SetJoypadState(0, B_CROSS, 0, 0, 0, 0)
+			await _wait(8)
+			m.SetJoypadState(0, 0, 0, 0, 0, 0)
+			await _wait(30)
+		await _wait(240)
+		var t := [_traffic(_a), _traffic(_b)]
+		print("[psx-link] round %d: A=%s B=%s" % [i, t[0], t[1]])
+		await _shot("race_%d" % i)
 
 	await _wait(600)
 	await _shot("final")
