@@ -6,7 +6,7 @@
 ## Using libVLC gives broad codec support (incl. HEVC/x265) with one shared
 ## video backend.
 class_name VCRPlayer
-extends XRToolsPickable
+extends MediaTransport
 
 
 ## Fast-forward / rewind scan rate: seconds of video traversed per real second
@@ -45,7 +45,6 @@ var _vcr_params := {
 
 # Runtime state
 var video_path: String = ""
-var connected_tv: RetroTV = null
 var is_playing: bool = false
 # Scan direction: 0 = normal, +1 = fast-forward scan, -1 = rewind scan.
 # While scanning the player keeps PLAYING (so it presents frames) but we jump
@@ -57,22 +56,7 @@ var _scan_accum: float = 0.0            # time since the last scan seek
 # decoder; ~12 seeks/sec still reads as a smooth fast-scan.
 const SCAN_SEEK_INTERVAL := 0.08
 
-# libVLC-backed engine (shared with DVDPlayer) + Godot-routed spatial audio.
-# libVLC decodes PCM into VlcPlayer's ring buffer; we drain it into an
-# AudioStreamGenerator on a 3D player at the connected TV, so VHS sound is
-# spatialised (and the TV volume knob scales it) like the console/DVD audio.
-var _vlc: Object = null                 # VlcPlayer (GDExtension)
-var _emitter: SpatialAudioEmitter = null
-var _volume_linear: float = 1.0
-var _paused: bool = false
 
-# What the deck's own channels currently reach, worked out in
-# on_av_topology_changed: whether the picture has a path to the set, and which of
-# its speakers the left and right channels land on (-1 = nowhere, 0 = the set's
-# left, 1 = its right, so a crossed pair swaps them).
-var _feed_video: bool = false
-var _feed_left: int = -1
-var _feed_right: int = -1
 
 # Front-loading tape bay (insert ride, eject, grab hand-off, collision) — all owned
 # by the shared MediaSlot; see media_slot.gd. The tape rides in 10 cm and lies flat
@@ -137,22 +121,6 @@ func _ready() -> void:
 	_update_name_label()
 
 
-## Build the spatial audio player fed by VlcPlayer's PCM ring buffer.
-func _setup_audio() -> void:
-	_emitter = SpatialAudioEmitter.new()
-	_emitter.name = "SpatialAudioEmitter"
-	_emitter.unit_size = 3.0
-	_emitter.max_distance = 15.0
-	# The picture and the sound both come from the TV, so the emitter is given the
-	# set's own speaker positions once one is connected (_emit_through). Non-zero
-	# here for the second voice that needs, and as the spread for a set too old to
-	# report them.
-	_emitter.speaker_separation = 0.25
-	# Aimed at whatever set it is plugged into; see _process.
-	_emitter.directivity = SpatialAudioEmitter.SPEAKER_DIRECTIVITY
-	add_child(_emitter)
-
-
 func _update_name_label() -> void:
 	if _name_label:
 		_name_label.text = vcr_label.to_upper()
@@ -185,26 +153,6 @@ func _process(delta: float) -> void:
 	else:
 		_last_total = -1.0
 		_clock.set_blank()
-
-
-## Hand the emitter the set's own two speaker positions, so the deck's tape sound
-## leaves the cabinet where the set's sound does. Falling back to the TV's origin
-## puts it inside the box, which HRTF makes obvious, and spreads it along the
-## DECK's local X -- an axis that swings whenever the deck is turned.
-func _emit_through(tv: Node3D) -> void:
-	if tv.has_method("get_speaker_positions"):
-		var sp: PackedVector3Array = tv.get_speaker_positions()
-		# The two voices carry the deck's own left and right, so a crossed pair is
-		# handled by writing each voice to the speaker its cord actually reaches --
-		# no per-sample work, just a position each. A channel routed nowhere keeps
-		# whichever position; it is silent (set_channel_gains) and cannot be heard.
-		_emitter.set_speaker_positions(
-			sp[_feed_left] if _feed_left >= 0 else sp[0],
-			sp[_feed_right] if _feed_right >= 0 else sp[1])
-	else:
-		_emitter.set_emit_position(tv.global_position)
-	if tv.has_method("get_screen_normal"):
-		_emitter.set_emit_direction(tv.get_screen_normal(), tv.get_screen_up())
 
 
 ## Drain decoded PCM from VlcPlayer into the generator (fills only what's free).
@@ -392,11 +340,6 @@ func remote_stop() -> void:
 	_on_stop_pressed()
 
 
-## True while playback is paused (used by the TV remote's play/pause cell).
-func is_paused() -> bool:
-	return _paused
-
-
 func remote_ff() -> void:
 	_on_ff_pressed()
 
@@ -531,13 +474,6 @@ func play() -> void:
 	_net_push_state()
 
 
-## See DVDPlayer._exit_tree — a freed deck has to stop libVLC with a budget, and
-## stop() is not that: it returns early when paused and pushes netplay state.
-func _exit_tree() -> void:
-	if _vlc:
-		_vlc.shutdown()
-
-
 func stop() -> void:
 	if not is_playing:
 		return
@@ -643,43 +579,6 @@ func _on_video_finished() -> void:
 # CompositeCable works out the pairs; this only reads them.
 
 
-## Called by a CompositeCable whenever a plug is seated or pulled anywhere on it,
-## with every source-to-sink pair the lead currently carries.
-func on_av_topology_changed(_links: Array) -> void:
-	# The reported list is this ONE cable's cords. AvSource asks every cable this
-	# deck's own sockets touch: a deck with its picture on one lead and its sound
-	# on another had whichever resolved last overwrite the whole of its routing,
-	# so the other half went silently dead.
-	#
-	# Shared with RetroSystem and the DVD player, which is how this deck gained the
-	# rules it was written without: a multi-way socket read through channel_for(),
-	# a sink with no screen of its own, a stereo lead, and a picture and a sound
-	# that land in two different boxes.
-	var feed := AvSource.resolve(self, true)
-	_apply_av_feed(feed.primary_sink() as RetroTV, not feed.video_sinks.is_empty(),
-		feed.left, feed.right)
-
-
-func _apply_av_feed(tv: RetroTV, video: bool, l: int, r: int) -> void:
-	var previous := connected_tv
-	_feed_video = video
-	_feed_left = l
-	_feed_right = r
-	connected_tv = tv
-	# No picture to move on or off anything: a set reads get_video_texture() and
-	# stops getting one the moment the cord leaves the socket.
-	if previous != tv:
-		if previous != null and is_instance_valid(previous):
-			previous.hide_osd()
-			previous.on_av_source_lost(self)
-		if tv != null:
-			tv.on_av_source_found(self)
-	# A channel with nowhere to go is silenced at its voice; the one still
-	# connected plays on. See SpatialAudioEmitter.set_channel_gains.
-	if _emitter:
-		_emitter.set_channel_gains(1.0 if l >= 0 else 0.0, 1.0 if r >= 0 else 0.0)
-
-
 # --- Save/load restore (mirrors RetroSystem) ---
 
 func get_snapped_tape() -> Node3D:
@@ -696,19 +595,3 @@ func restore_cable_connection(_tv: RetroTV) -> void:
 ## Seat a tape programmatically (event/save restore) — no ride, bypasses the filter.
 func restore_tape(tape: Node3D) -> void:
 	_slot.restore(tape)
-
-
-## Ignore-gravity: the device floats where it is put instead of falling. Restored
-## from a save through this flag, which FloatLock reads once at _ready.
-var ignore_gravity: bool = false
-var _float_lock: FloatLock = null
-
-
-func get_ignore_gravity() -> bool:
-	return _float_lock != null and _float_lock.enabled
-
-
-func set_ignore_gravity(on: bool) -> void:
-	ignore_gravity = on
-	if _float_lock != null:
-		_float_lock.set_enabled(on)

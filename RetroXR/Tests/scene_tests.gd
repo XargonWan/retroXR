@@ -540,12 +540,25 @@ func _test_vlc() -> void:
 	_ok(true, "vlc/shutdown is idempotent")
 
 	# And the decks actually call it, which is the half a C++ method cannot assert.
-	for path in ["res://Scripts/Objects/media/dvd_player.gd",
-			"res://Scripts/Objects/media/vcr_player.gd",
+	# Both decks tear down through MediaTransport now, so that is the file the
+	# call lives in; the tuner still owns its own.
+	for path in ["res://Scripts/Objects/media/media_transport.gd",
 			"res://Scripts/Objects/tv/tv_tuner.gd"]:
 		var src := FileAccess.get_file_as_string(path)
 		_ok(src.contains("func _exit_tree") and src.contains("shutdown()"),
 			"vlc/%s stops libVLC on teardown" % path.get_file())
+
+	# Reading the base's source only proves the deck tears down if the deck
+	# actually inherits it, so check the chain rather than assuming it. Grepping
+	# the two deck files used to cover both halves at once; after the extraction
+	# it would have passed while proving nothing.
+	for path in ["res://Scripts/Objects/media/dvd_player.gd",
+			"res://Scripts/Objects/media/vcr_player.gd"]:
+		var scr := load(path) as GDScript
+		var base := scr.get_base_script() as GDScript
+		_ok(base != null and base.resource_path.ends_with("media_transport.gd"),
+			"vlc/%s inherits that teardown (base is %s)"
+				% [path.get_file(), "none" if base == null else base.resource_path.get_file()])
 
 
 # ── Slot manifest CRUD ────────────────────────────────────────────────────────
