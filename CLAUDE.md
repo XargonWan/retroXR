@@ -258,7 +258,7 @@ single-room key), the `is_room_ready` / `is_scene_content_ready` boundaries, the
 state machine's coalescing, the periodic autosave, clearing and reloading the room you are
 standing in, two restores racing into one room, a machine's core outliving its machine, the room's own
 movable furniture, the video decks' teardown contract, and slot-manifest CRUD.
-94 cases, ~30 s.
+99 cases, ~30 s.
 ```bash
 "$godot" --headless --path RetroXR res://Tests/scene_tests.tscn
 "$godot" --headless --path RetroXR res://Tests/scene_tests.tscn -- --only=autosave

@@ -169,6 +169,10 @@ func _cache_shell_nodes() -> void:
 		_screen_off_material = _screen.get_surface_override_material(0)
 	_volume_slider = get_node_or_null("VolumeSlider") as VRSlider
 	_power_switch = get_node_or_null("PowerSwitch") as VRSlider
+	# Authored rather than built here, so it joins the group by hand — see
+	# RetroSystemModel.POWER_SWITCH_GROUP for what reads it.
+	if _power_switch != null:
+		_power_switch.add_to_group(POWER_SWITCH_GROUP)
 	# find_child, not get_node: the stand-in shell is a "Primitive" subtree now.
 	var body := find_child("HandheldBody", true, false) as MeshInstance3D
 	if body and body.mesh is BoxMesh:

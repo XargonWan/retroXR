@@ -113,6 +113,13 @@ func on_power_off() -> void:
 # event, the cartridge being pulled) still moves the switch.
 var _power_slider: VRSlider = null
 
+## Every power switch joins this, whether the base class built it (the console
+## rockers below) or the model's scene authored it (HandheldModel). It is what
+## tells ScenePersistence that a slider's position is a machine's STATE rather
+## than a pose: a restored machine is always off, so a saved ON position brought
+## a handheld back with its switch up and nothing running behind it.
+const POWER_SWITCH_GROUP := "power_switch"
+
 
 ## Mount a two-detent power slider on `cap` and hide the generic push button.
 ## `axis` is the travel direction toward ON, in this model's local space;
@@ -140,6 +147,7 @@ func build_power_slider(power_btn: VRButton, cap: MeshInstance3D,
 	slider.global_position = ab.get_center()
 	slider.set_knob_mesh(cap)
 	slider.value_changed.connect(_on_power_slider_changed)
+	slider.add_to_group(POWER_SWITCH_GROUP)
 	_power_slider = slider
 	return slider
 

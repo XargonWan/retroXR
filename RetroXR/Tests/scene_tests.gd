@@ -551,6 +551,47 @@ func _test_power() -> void:
 	_ok(src.contains(".power_off()") and not src.contains(".toggle_power()"),
 		"power/clear_scene powers off locally rather than toggling")
 
+	# A power switch is not a pose, and it is the one slider that is not. Power is
+	# not in the file at all, so every machine restores OFF — and a saved switch
+	# position brought a handheld back with its cap up and nothing running behind
+	# it, having fired value_changed straight into toggle_power on the way.
+	var gb: RetroSystem = preload("res://Scenes/Objects/system.tscn").instantiate()
+	gb.systemid = "game_boy"
+	add_child(gb)
+	await get_tree().process_frame
+	var sw := gb.find_child("PowerSwitch", true, false) as VRSlider
+	var vol := gb.find_child("VolumeSlider", true, false) as VRSlider
+	_ok(sw != null and vol != null,
+		"power/the handheld carries both a power switch and a volume slider")
+	sw.set_value_no_signal(1.0)
+	vol.set_value_no_signal(0.75)
+	var sp := ScenePersistence.new("arcade")
+	var paths: Array = []
+	for rec: Variant in sp._serialize_articulated_controls(gb):
+		paths.append(str((rec as Dictionary).get("path", "")))
+	_ok(not paths.has(str(gb.get_path_to(sw))),
+		"power/a running machine does not save its power switch")
+	# The other half: the walk itself still works, so the case above is measuring
+	# the skip rather than an empty record list.
+	_ok(paths.has(str(gb.get_path_to(vol))),
+		"power/the volume slider is saved as before")
+
+	# Every slot written before this carries the switch, so the restore has to
+	# refuse it too — applying it would lift the cap AND toggle the machine.
+	sw.set_value_no_signal(0.0)
+	# The toggle is reached through value_changed, and a machine with no ROM
+	# refuses to start — so is_powered_on would read false either way and only the
+	# signal tells the two outcomes apart.
+	var emitted := [0]
+	sw.value_changed.connect(func(_v: float) -> void: emitted[0] += 1)
+	sp._restore_articulated_controls(gb, [{
+		"path": str(gb.get_path_to(sw)), "kind": "slider", "value": 1.0,
+	}])
+	_ok(is_zero_approx(sw.value), "power/an old slot's ON switch is not applied")
+	_eq(emitted[0], 0, "power/and never reaches the machine's power toggle")
+	remove_child(gb)
+	gb.free()
+
 
 # ── The video decks' teardown contract ────────────────────────────────────────
 

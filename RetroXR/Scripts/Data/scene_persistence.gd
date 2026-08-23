@@ -1152,7 +1152,12 @@ func _serialize_articulated_controls(root: Node3D) -> Array:
 				"kind": "knob", "value": knob.get_value()})
 	for candidate: Node in root.find_children("*", "VRSlider", true, false):
 		var slider := candidate as VRSlider
-		if slider != null:
+		# A power switch is the one slider whose position is not a pose: it says
+		# whether the machine is RUNNING, and nothing restores a running machine.
+		# Saved, it brought a handheld back with its switch at ON and a dead
+		# console behind it. Its rest position is authored off, and the model puts
+		# it back under the machine's control from there (on_power_on/off).
+		if slider != null and not slider.is_in_group(RetroSystemModel.POWER_SWITCH_GROUP):
 			out.append({"path": str(root.get_path_to(slider)),
 				"kind": "slider", "value": slider.value})
 	return out
@@ -1190,7 +1195,11 @@ func _restore_articulated_controls(root: Node, records: Array) -> void:
 				if control is VRKnob:
 					(control as VRKnob).set_value(value)
 			"slider":
-				if control is VRSlider:
+				# The group check is here as well as in the save walk: every slot
+				# written before this one carries the switch, and applying it would
+				# also fire value_changed straight into toggle_power.
+				if control is VRSlider \
+						and not control.is_in_group(RetroSystemModel.POWER_SWITCH_GROUP):
 					(control as VRSlider).set_value(value)
 		control.remove_meta("net_restore_in_progress")
 
