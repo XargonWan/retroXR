@@ -408,3 +408,36 @@ static func _content_length(headers: Dictionary) -> int:
 			if v.is_valid_int():
 				return int(v)
 	return 0
+
+
+## One sentence a player can act on, for a failed RomM request.
+##
+## The vocabulary lived in four places -- RommSaves, RommStates, RommDownloader
+## and FirmwareInstaller -- and one of the docstrings said so ("same vocabulary
+## as saves and ROM downloads") without anything actually sharing it. Four of the
+## seven branches were word-for-word identical in all four; the two that vary
+## genuinely vary, so they are parameters rather than a fifth copy.
+##
+## `unauthorized` differs because a 403 does not mean the same thing everywhere:
+## a read endpoint means "sign in again", while a QR-paired token that cannot
+## write means the device will never be able to upload, and telling that player
+## to sign in again sends them round a loop that cannot help.
+static func describe_error(result: int, code: int,
+		unauthorized: String = "Sign in to RomM again",
+		refused: String = "RomM refused the request (%d)") -> String:
+	match result:
+		Result.CONNECT_FAILED, Result.REQUEST_FAILED:
+			return "Connection lost"
+		Result.TIMED_OUT:
+			return "The server took too long to answer"
+		Result.WRITE_FAILED:
+			return "Not enough space, or the disk is unwritable"
+		Result.ABORTED:
+			return "Cancelled"
+	if code == 401 or code == 403:
+		return unauthorized
+	if code == 404:
+		return "No longer on the server"
+	if code >= 500:
+		return "Server error (%d)" % code
+	return refused % code

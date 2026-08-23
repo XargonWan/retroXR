@@ -54,6 +54,7 @@ func _ready() -> void:
 	_test_firmware_index()
 	_test_stats_unchanged()
 	_test_verify_transfer()
+	_test_error_vocabulary()
 	_test_cache_paths()
 	_test_scan_roms()
 	_test_gamelist_removal()
@@ -1704,3 +1705,50 @@ func _declared_len(req: String) -> int:
 	var rest := req.substr(at + 16)
 	var end := rest.find("\r")
 	return int(rest.left(end) if end > 0 else rest)
+
+
+# ---------------------------------------------------------------------------
+# RommHttp.describe_error — the one place a failed RomM request is put into
+# words. It used to be four copies, and nothing asserted any of them, so a
+# reworded branch could go out without a single test noticing.
+# ---------------------------------------------------------------------------
+
+func _test_error_vocabulary() -> void:
+	var D: Callable = RommHttp.describe_error
+	var HTTP: int = RommHttp.Result.HTTP_ERROR
+
+	_eq("errors/a dead connection", D.call(RommHttp.Result.CONNECT_FAILED, 0),
+		"Connection lost")
+	_eq("errors/a refused request reads the same as a dead one",
+		D.call(RommHttp.Result.REQUEST_FAILED, 0), "Connection lost")
+	_eq("errors/a silent server", D.call(RommHttp.Result.TIMED_OUT, 0),
+		"The server took too long to answer")
+	_eq("errors/a full disk", D.call(RommHttp.Result.WRITE_FAILED, 0),
+		"Not enough space, or the disk is unwritable")
+	_eq("errors/the player cancelled", D.call(RommHttp.Result.ABORTED, 0), "Cancelled")
+
+	# The transport result wins over the code: a cancelled transfer often carries
+	# whatever status had already come back, and reporting that would be a lie.
+	_eq("errors/a transport failure outranks any status code",
+		D.call(RommHttp.Result.ABORTED, 500), "Cancelled")
+
+	_eq("errors/an expired token", D.call(HTTP, 401), "Sign in to RomM again")
+	_eq("errors/and a forbidden one says the same by default",
+		D.call(HTTP, 403), "Sign in to RomM again")
+	_eq("errors/a deleted item", D.call(HTTP, 404), "No longer on the server")
+	_eq("errors/a server fault names the code", D.call(HTTP, 503),
+		"Server error (503)")
+	_eq("errors/anything else falls through with its code",
+		D.call(HTTP, 418), "RomM refused the request (418)")
+
+	# Both overrides. The upload wording is the reason this is a parameter and
+	# not a fifth copy: a QR-paired token with no write access will never be able
+	# to upload, so "sign in again" would send that player round a loop.
+	var upload := "RomM will not accept uploads from this device — its sign-in has no write access"
+	_eq("errors/an upload endpoint can say why a 403 is permanent",
+		D.call(HTTP, 403, upload), upload)
+	_eq("errors/and a download endpoint can name itself",
+		D.call(HTTP, 400, "Sign in to RomM again", "Server refused the download (%d)"),
+		"Server refused the download (400)")
+	_eq("errors/an override does not leak into the other branches",
+		D.call(HTTP, 404, upload), "No longer on the server")

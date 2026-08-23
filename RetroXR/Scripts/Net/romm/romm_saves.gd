@@ -151,20 +151,4 @@ static func _scratch_path(save_id: int) -> String:
 ## Same vocabulary the ROM downloader uses, so a save failure and a ROM failure
 ## read the same way in the notification bar.
 static func _describe(out: Dictionary) -> String:
-	var code := int(out.get("code", 0))
-	match int(out["result"]):
-		RommHttp.Result.CONNECT_FAILED, RommHttp.Result.REQUEST_FAILED:
-			return "Connection lost"
-		RommHttp.Result.TIMED_OUT:
-			return "The server took too long to answer"
-		RommHttp.Result.WRITE_FAILED:
-			return "Not enough space, or the disk is unwritable"
-		RommHttp.Result.ABORTED:
-			return "Cancelled"
-	if code == 401 or code == 403:
-		return "Sign in to RomM again"
-	if code == 404:
-		return "No longer on the server"
-	if code >= 500:
-		return "Server error (%d)" % code
-	return "RomM refused the request (%d)" % code
+	return RommHttp.describe_error(int(out["result"]), int(out.get("code", 0)))

@@ -192,21 +192,9 @@ static func _scratch_path(state_id: int) -> String:
 ## by QR pairing asks for roms.read, platforms.read and collections.read only,
 ## so the FIRST thing an upload does on a freshly paired device is 403. Saying
 ## "upload failed" there sends the player looking for a network fault.
+## A 403 here is not the read-side "sign in again": a QR-paired token with no
+## write access will never be able to upload, and telling that player to sign in
+## again sends them round a loop that cannot help them.
 static func _describe(out: Dictionary) -> String:
-	var code := int(out.get("code", 0))
-	match int(out["result"]):
-		RommHttp.Result.CONNECT_FAILED, RommHttp.Result.REQUEST_FAILED:
-			return "Connection lost"
-		RommHttp.Result.TIMED_OUT:
-			return "The server took too long to answer"
-		RommHttp.Result.WRITE_FAILED:
-			return "Not enough space, or the disk is unwritable"
-		RommHttp.Result.ABORTED:
-			return "Cancelled"
-	if code == 401 or code == 403:
-		return "RomM will not accept uploads from this device — its sign-in has no write access"
-	if code == 404:
-		return "No longer on the server"
-	if code >= 500:
-		return "Server error (%d)" % code
-	return "RomM refused the request (%d)" % code
+	return RommHttp.describe_error(int(out["result"]), int(out.get("code", 0)),
+		"RomM will not accept uploads from this device — its sign-in has no write access")
