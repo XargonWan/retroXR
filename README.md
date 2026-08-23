@@ -52,6 +52,22 @@ them from there.
 
 <img src="docs/images/cores_bios_psx.png" width="640" alt="The BIOS / Extras view for PlayStation, listing the PS1 BIOS files (scph5500/5501/5502.bin and psxonpsp660.bin) with their required/optional status and per-file download buttons." />
 
+### Forked cores
+
+Most cores come from libretro's buildbot unmodified. These six are forks, because
+RetroXR needs something the upstream core does not do — mostly carrying a link cable
+between two cores in one process, which has no upstream equivalent. Each links to the
+branch RetroXR builds from.
+
+| Core | Branch | What the fork adds |
+| --- | --- | --- |
+| [gambatte](https://github.com/XenuIsWatching/gambatte-libretro/tree/retroxr) | `retroxr` | Game Boy link cable over the frontend's link bus, and three savestate fixes — a lossy `ppu.endx` restore, an uninitialised `rambankMode`, and frame duplication that slipped a reloaded state one frame against the run it came from. |
+| [mGBA](https://github.com/XenuIsWatching/mgba/tree/retroxr) | `retroxr` | Link cable for its Game Boy driver as well as its GBA one (separate cores, separate serial ports), normal-mode multi-player, a GameCube port on the bus, and an RCNT/SIOCNT mirror that was stale at serialize time. |
+| [PCSX-ReARMed](https://github.com/XenuIsWatching/pcsx_rearmed/tree/retroxr) | `retroxr` | An emulated SIO1 serial port and the PlayStation link cable over the link bus, plus memory cards that can be ejected and reinserted while running. |
+| [Dolphin](https://github.com/XenuIsWatching/dolphin/tree/retroxr) | `retroxr` | GameCube-to-GBA over the link bus, Wiimote IR passthrough, gyroscope and Nunchuk accelerometer, deterministic mode for netplay, real memory cards per slot, and Vulkan semaphore propagation. |
+| [Azahar](https://github.com/XenuIsWatching/azahar/tree/libretro-stereo-options) | `libretro-stereo-options` | `render_3d` / `factor_3d` core options, so the 3DS core's stereoscopy can be driven from VR. |
+| [Play!](https://github.com/XenuIsWatching/Play-/tree/retroxr) | `retroxr` | Takes its data directory from the frontend instead of assuming `/sdcard` (which is not writable on a Quest), and covers the pixels the GS samples when rasterising a sprite, which left vertical seams. |
+
 ## Objects
 
 ### System
