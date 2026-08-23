@@ -768,12 +768,22 @@ func _update_screen_source() -> void:
 	# blue screen below must not get a look in. Nothing else is driving the mesh
 	# either -- the connected host was muted with set_screen_enabled(false) when
 	# the input changed.
+	#
+	# A broadcast is SAMPLED like every other picture. The tuner used to hand the
+	# set a finished StandardMaterial3D, which is the one route onto the glass that
+	# skips _show_sampled — so the 4:3/16:9 fit, the tube stage, the OSD and the
+	# phosphor all stopped at the TV input while working on composite, and the
+	# aspect button appeared dead. Static is still a material of the tuner's own:
+	# snow fills the whole tube whatever shape the picture would have been.
 	if _tv_enabled and current_source == Source.TV and _tuner != null:
-		var wanted := _tuner.screen_material()
-		var current := _screen_mesh.get_surface_override_material(0)
-		if current != wanted:
+		var tex := _tuner.picture_texture()
+		if tex != null:
+			_show_sampled(_crt_screen_material(), tex)
+			return
+		var snow := _tuner.static_material()
+		if _screen_mesh.get_surface_override_material(0) != snow:
 			_drop_sampled()
-			_paint(wanted)
+			_paint(snow)
 		return
 
 	# The aerial input paints its own no-signal. A set tuned to a channel nothing is

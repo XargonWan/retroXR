@@ -1,12 +1,12 @@
 ## TVTuner — the set's built-in TV input: a channel list and a libVLC stream.
 ##
 ## Owned by RetroTV, which decides when it is on screen. The tuner never touches
-## the screen mesh itself: it produces a Material and the TV installs it, so all
-## screen arbitration stays in one place (tv.gd's _update_screen_source and
-## _update_crt already fight over that surface and do not need a third party).
+## the screen mesh itself, so all screen arbitration stays in one place (tv.gd's
+## _update_screen_source and _update_crt already fight over that surface and do
+## not need a third party).
 ##
-## Two materials, and which one is current is the whole state machine:
-##   picture — an unshaded StandardMaterial3D carrying the decoded frame
+## Two states, and which one is current is the whole state machine:
+##   picture — the decoded frame, offered as a texture for the set to sample
 ##   static  — tv_static.gdshader, shown for every failure, with the reason in
 ##             the OSD
 class_name TVTuner
@@ -36,7 +36,6 @@ var _vlc: Object = null
 var _hdhr: HDHomeRun = null
 var _emitter: SpatialAudioEmitter = null
 
-var _picture_material: StandardMaterial3D = null
 var _static_material: ShaderMaterial = null
 
 var _active := false
@@ -415,21 +414,24 @@ func _pump_audio() -> void:
 
 # ── what the TV puts on the glass ─────────────────────────────────────────────
 
-## The material for the screen right now: the decoded picture when there is one,
-## otherwise static. Never null while active, so the TV's blue no-signal screen
-## stays out of the way of the tuner's own reporting.
-func screen_material() -> Material:
-	if _have_picture and _vlc:
-		var tex: Texture2D = _vlc.get_texture()
-		if tex != null:
-			if _picture_material == null:
-				_picture_material = StandardMaterial3D.new()
-				_picture_material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-			# update_frame() replaces the ImageTexture outright on a resolution
-			# change, so the reference is re-read every frame rather than cached.
-			if _picture_material.albedo_texture != tex:
-				_picture_material.albedo_texture = tex
-			return _picture_material
+## The decoded frame, or null when there is nothing to show and the set should
+## put this tuner's static up instead.
+##
+## A TEXTURE, not a material: the set samples every picture into a display
+## material of its own, and handing it a finished material was what kept the
+## aspect fit, the tube stage and the OSD off a broadcast. update_frame()
+## replaces the ImageTexture outright on a resolution change, so this is read
+## per frame rather than cached.
+func picture_texture() -> Texture2D:
+	if not _have_picture or _vlc == null:
+		return null
+	return _vlc.get_texture() as Texture2D
+
+
+## Snow, for every state that has no picture. The set installs this one directly:
+## static is generated across the whole tube whatever shape a picture would have
+## been, so there is nothing for it to sample and nothing to fit.
+func static_material() -> ShaderMaterial:
 	return _static_material
 
 

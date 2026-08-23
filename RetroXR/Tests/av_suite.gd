@@ -53,6 +53,26 @@ class StubSource extends Node3D:
 		return rf_channel
 
 
+## The set's own TV input, reduced to the one thing the glass reads off it.
+## A TVTuner subclass rather than a StubSource because RetroTV holds its tuner by
+## type — and because none of libVLC, a channel list or a real HDHomeRun is part
+## of the question, which is what route a broadcast takes onto the glass.
+class StubTuner extends TVTuner:
+	var texture: Texture2D = null
+
+	func _ready() -> void:
+		pass
+
+	func set_active(on: bool) -> void:
+		_active = on
+
+	func picture_texture() -> Texture2D:
+		return texture
+
+	func status_banner() -> String:
+		return ""
+
+
 var _case := ""
 ## Set by a case that cannot run here (no core, no shell in this build). Anything
 ## else that ends without asserting is an abort, not a pass.
@@ -110,6 +130,7 @@ func _run() -> void:
 		["display/the afterglow does not carry over from the last machine", _d_no_ghost],
 		["display/a source's own stage shader is used", _d_stage],
 		["display/two sets get their own window of one picture", _d_stage_per_tv],
+		["display/the picture shape follows the button on the TV input", _d_tv_aspect],
 		["guard/a host that is not shown is refused", _g_refused],
 		["guard/the shown host may paint", _g_allowed],
 		["guard/only the owner may take the picture down", _g_release],
@@ -960,6 +981,48 @@ func _d_stage_per_tv() -> void:
 			"the first set gets the top half")
 		_check_eq(bottom_mat.get_shader_parameter("source_rect"), Vector4(0.0, 0.5, 1.0, 0.5),
 			"the second set gets the bottom half")
+
+
+## A broadcast is a picture like any other: it is sampled into one of the set's own
+## materials, so the 4:3/16:9 button reshapes it exactly as it reshapes a console.
+## The tuner used to hand the set a finished StandardMaterial3D instead — the only
+## route onto the glass that skips _show_sampled — and the button did nothing at
+## all on the TV input while working on every other one.
+func _d_tv_aspect() -> void:
+	var tv := _tv()
+	await _wait(30)
+	var tuner := StubTuner.new()
+	tuner.name = "TVTuner"
+	tuner.texture = _a_texture()
+	tv.add_child(tuner)
+	tv._tuner = tuner
+	tv.set_source(RetroTV.Source.TV)
+	await _wait(6)
+	_check_eq(_shown(tv), tuner.texture, "the set shows the tuner's picture")
+
+	tv.set_widescreen(false)
+	await _wait(4)
+	var narrow: Variant = _fit_on_glass(tv)
+	tv.set_widescreen(true)
+	await _wait(4)
+	var wide: Variant = _fit_on_glass(tv)
+	# Whichever shape the glass is, one of the two settings has to letterbox: the
+	# tube cannot be both. Reading the fit off the material that is ACTUALLY on the
+	# glass is the whole point — the set kept a fitted material up to date all along,
+	# it just was not showing it.
+	_check(narrow != null and wide != null,
+		"a broadcast is sampled into a material that carries the fit")
+	_check(narrow != wide, "the aspect button changes the picture's shape: %s vs %s"
+		% [narrow, wide])
+
+
+## The fit the picture on the glass is actually being drawn at, or null when what
+## is up there has no fit to read.
+func _fit_on_glass(tv: RetroTV) -> Variant:
+	var mat := _glass(tv) as ShaderMaterial
+	if mat == null:
+		return null
+	return mat.get_shader_parameter("fit_scale")
 
 
 # ── The set's guard ───────────────────────────────────────────────────────────
