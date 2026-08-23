@@ -111,8 +111,31 @@ func _ready() -> void:
 	_test_state_thumbnail()
 	_test_state_disk_round_trip()
 
+	await _settle()
 	print("[test] ---- %d passed, %d failed ----" % [_pass, _fail])
 	get_tree().quit(1 if _fail > 0 else 0)
+
+
+## Release the machines this suite built and let the AudioServer reclaim their
+## voices BEFORE the main loop ends.
+##
+## Godot deletes the AudioServer after unregistering the extension classes, so a
+## playback still held at that point is destroyed through a freed class record:
+## the process dies with an access violation, no crash-handler backtrace, every
+## case already printed PASS. It crashed 3 runs in 12 like that. A RetroSystem
+## binds a spatial emitter as soon as its core starts, and several are still
+## standing here — queue_free() alone is not enough because it only schedules the
+## free, and quit() leaves at most the rest of the current iteration.
+##
+## The frame count matches time_of_day_tests._settle for the same measured
+## reason: the reclaim is a chain (emitters freed, then the mixer notices it has
+## no voices and frees its own player, then another AudioServer::update() hands
+## the playback back), and a shorter wait only covers part of it.
+func _settle() -> void:
+	for child in get_children():
+		child.queue_free()
+	for _i in range(60):
+		await get_tree().process_frame
 
 
 func _ok(test_name: String, cond: bool, detail: String = "") -> void:
