@@ -83,11 +83,7 @@ func _build_ui() -> void:
 	# Rounded panel backdrop — same approach as SpawnMenu2D
 	var panel := PanelContainer.new()
 	panel.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	var bg := StyleBoxFlat.new()
-	bg.bg_color = COLOR_BG
-	for corner in ["corner_radius_top_left", "corner_radius_top_right",
-			"corner_radius_bottom_left", "corner_radius_bottom_right"]:
-		bg.set(corner, 10)
+	var bg := MenuStyle.rounded(COLOR_BG, 10)
 	panel.add_theme_stylebox_override("panel", bg)
 	add_child(panel)
 

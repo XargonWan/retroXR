@@ -21,15 +21,11 @@ var _last_activate_frame := -1
 func _ready() -> void:
 	var panel := PanelContainer.new()
 	panel.set_anchors_preset(Control.PRESET_FULL_RECT)
-	var sb := StyleBoxFlat.new()
-	sb.bg_color = COLOR_BG
+	var sb := MenuStyle.rounded(COLOR_BG, 8)
 	sb.border_color = Color(0.55, 0.55, 0.90)
 	for side in ["border_width_left", "border_width_right",
 			"border_width_top", "border_width_bottom"]:
 		sb.set(side, 3)
-	for corner in ["corner_radius_top_left", "corner_radius_top_right",
-			"corner_radius_bottom_left", "corner_radius_bottom_right"]:
-		sb.set(corner, 8)
 	panel.add_theme_stylebox_override("panel", sb)
 	add_child(panel)
 

@@ -40,6 +40,7 @@ func _ready() -> void:
 	_test_arm_ladder()
 	_test_thumb_cache()
 	_test_backup_notice()
+	_test_panel_chrome()
 	_restore_ledger()
 	print("[state-ui] ---- %d passed, %d failed ----" % [_pass, _fail])
 	get_tree().quit(1 if _fail > 0 else 0)
@@ -361,4 +362,45 @@ func _test_thumb_cache() -> void:
 	ui.forget_thumb(path)
 	_ok("thumb/forgetting it forces a re-read", not ui._thumb_cache.has(path))
 	DirAccess.remove_absolute(ProjectSettings.globalize_path(path))
+	ui.free()
+
+
+# ── Panel chrome ──────────────────────────────────────────────────────────────
+#
+# The rounded background every *_2d panel puts behind itself. Eleven of them
+# hand-rolled the four-corner loop; they now call MenuStyle.rounded, which is
+# what the menu views already used. Nothing asserted the result before, so a
+# swapped colour or a radius typed as 1 instead of 10 would have shipped
+# looking almost right.
+
+func _test_panel_chrome() -> void:
+	var ui := _ui()
+	var panel := _find(ui, "PanelContainer") as PanelContainer
+	_ok("chrome/the view has a panel behind it", panel != null)
+	if panel == null:
+		ui.free()
+		return
+
+	var sb := panel.get_theme_stylebox("panel") as StyleBoxFlat
+	_ok("chrome/and it is a flat stylebox", sb != null)
+	if sb != null:
+		# All four, not just one: the loop this replaced set them by name, and a
+		# hand-written replacement that misses a corner is invisible in review and
+		# obvious on screen.
+		_eq("chrome/top-left is rounded", sb.corner_radius_top_left, 10)
+		_eq("chrome/top-right is rounded", sb.corner_radius_top_right, 10)
+		_eq("chrome/bottom-left is rounded", sb.corner_radius_bottom_left, 10)
+		_eq("chrome/bottom-right is rounded", sb.corner_radius_bottom_right, 10)
+		_ok("chrome/the background is opaque", sb.bg_color.a > 0.5,
+			str(sb.bg_color))
+
+	# MenuStyle.rounded is the shared builder; prove it really does produce the
+	# same thing the panels used to build by hand, so the swap is not just
+	# consistent with itself.
+	var made := MenuStyle.rounded(Color(0.1, 0.2, 0.3, 0.9), 7)
+	_eq("chrome/the shared builder keeps the colour", made.bg_color,
+		Color(0.1, 0.2, 0.3, 0.9))
+	for corner in ["corner_radius_top_left", "corner_radius_top_right",
+			"corner_radius_bottom_left", "corner_radius_bottom_right"]:
+		_eq("chrome/the shared builder sets %s" % corner, made.get(corner), 7)
 	ui.free()

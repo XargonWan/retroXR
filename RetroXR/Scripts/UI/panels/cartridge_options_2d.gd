@@ -155,11 +155,7 @@ func _build_ui() -> void:
 	else:
 		var panel := PanelContainer.new()
 		panel.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-		var bg := StyleBoxFlat.new()
-		bg.bg_color = COLOR_BG
-		for corner in ["corner_radius_top_left", "corner_radius_top_right",
-				"corner_radius_bottom_left", "corner_radius_bottom_right"]:
-			bg.set(corner, 10)
+		var bg := MenuStyle.rounded(COLOR_BG, 10)
 		panel.add_theme_stylebox_override("panel", bg)
 		add_child(panel)
 
@@ -854,11 +850,7 @@ func _thumb_frame(shot_path: String) -> Control:
 	frame.custom_minimum_size = _THUMB_BOX
 	frame.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	frame.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	var box := StyleBoxFlat.new()
-	box.bg_color = Color(0, 0, 0, 0.35)
-	for corner in ["corner_radius_top_left", "corner_radius_top_right",
-			"corner_radius_bottom_left", "corner_radius_bottom_right"]:
-		box.set(corner, 4)
+	var box := MenuStyle.rounded(Color(0, 0, 0, 0.35), 4)
 	frame.add_theme_stylebox_override("panel", box)
 
 	var tex := _thumb(shot_path)
