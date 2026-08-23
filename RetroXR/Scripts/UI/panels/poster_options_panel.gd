@@ -3,7 +3,7 @@
 ## Parented to a Poster but top_level, so it inherits no transform. Mirrors
 ## MouseOptionsPanel / BookOptionsPanel.
 class_name PosterOptionsPanel
-extends Node3D
+extends FloatingObjectPanel3D
 
 ## Clear of the sheet, measured along the surface it is stuck to rather than
 ## straight up: a poster on the ceiling would otherwise open its panel inside the
@@ -12,28 +12,11 @@ const STANDOFF := 0.12
 const RISE := 0.22
 
 var _poster: Poster = null
-var _camera: Node3D = null
-var _ui_connected := false
 
 @onready var _viewport_node: XRToolsViewport2DIn3D = $PosterOptionsViewport
 
 
-func _ready() -> void:
-	top_level = true
-	visible = false
-
-
-func _process(_delta: float) -> void:
-	if not visible:
-		return
-	if _poster and is_instance_valid(_poster):
-		global_position = _anchor_point()
-	if _camera and is_instance_valid(_camera):
-		look_at(_camera.global_position, Vector3.UP)
-		rotate_object_local(Vector3.UP, PI)
-
-
-func _anchor_point() -> Vector3:
+func _anchor() -> Vector3:
 	# +Z is out of the sheet's face, so this steps off the surface whatever the
 	# surface happens to be, then lifts a little for the common wall case.
 	var out := _poster.global_transform.basis.z.normalized()
@@ -44,14 +27,10 @@ func show_for(poster: Poster, camera: Node3D) -> void:
 	_poster = poster
 	_camera = camera
 	if _poster:
-		global_position = _anchor_point()
+		global_position = _anchor()
 	visible = true
 	_ensure_ui_connected()
 	_populate()
-
-
-func hide_panel() -> void:
-	visible = false
 
 
 # ── Internal helpers ───────────────────────────────────────────────────────────
@@ -121,3 +100,9 @@ func _on_peel() -> void:
 	if _poster and is_instance_valid(_poster):
 		_poster.peel()
 		_populate()
+
+
+# ── Placement, for FloatingObjectPanel3D ─────────────────────────────────────
+
+func _target_node() -> Node3D:
+	return _poster

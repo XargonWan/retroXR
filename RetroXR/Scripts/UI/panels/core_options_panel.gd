@@ -4,7 +4,7 @@
 ## Each frame it repositions itself above the owning system and faces the camera.
 ## Opened/closed via show_for()/hide_panel(); also has an in-UI ✕ close button.
 class_name CoreOptionsPanel
-extends Node3D
+extends FloatingObjectPanel3D
 
 ## Gap between the top of the hardware and the BOTTOM edge of the panel.
 ##
@@ -21,40 +21,16 @@ const CLEARANCE := 0.12
 const UI_SCENE := preload("res://Scenes/UI/core_options_2d.tscn")
 
 var _system: RetroSystem = null
-var _camera: Node3D = null
 ## The slotted cartridge's panel while it is driving our Cartridge tab.
 var _cart_panel: CartridgeOptionsPanel = null
-# Guard so we only wire the 2D UI signals once (the SubViewport persists).
-var _ui_connected := false
 
 @onready var _viewport_node: XRToolsViewport2DIn3D = $CoreOptionsViewport
-
-
-func _ready() -> void:
-	# top_level = true: this node is in the system's scene tree but ignores
-	# the parent's transform, letting us position it freely in world space.
-	top_level = true
-	visible = false
-	print("[CoreOptionsPanel] ready — attached to ", get_parent().name)
-
-
-func _process(_delta: float) -> void:
-	if not visible:
-		return
-	# Keep panel hovering above the system even when the system moves or is picked up
-	if _system and is_instance_valid(_system):
-		global_position = _hover_position()
-	# Face the camera: look_at points -Z toward target, then flip 180° so the
-	# UV/front face (+Z) faces the player — same trick used by spawn_menu_controller.
-	if _camera and is_instance_valid(_camera):
-		look_at(_camera.global_position, Vector3.UP)
-		rotate_object_local(Vector3.UP, PI)
 
 
 ## Centred over the machine, its bottom edge CLEARANCE above the hardware's top.
 ## Half the panel is added because global_position is its centre — placing the
 ## centre at the clearance height is what put the lower half inside the tower.
-func _hover_position() -> Vector3:
+func _anchor() -> Vector3:
 	var origin := _system.global_position
 	var half_height := _viewport_node.screen_size.y * 0.5
 	return Vector3(origin.x,
@@ -70,19 +46,13 @@ func show_for(system: RetroSystem, camera: Node3D) -> void:
 	_camera = camera
 	# Pre-position before making visible to avoid a one-frame flash at the wrong spot
 	if _system:
-		global_position = _hover_position()
+		global_position = _anchor()
 	visible = true
 	print("[CoreOptionsPanel] showing for system '%s'" % system.name)
 	if _viewport_node.scene == null:
 		_viewport_node.scene = UI_SCENE
 	_ensure_ui_connected()
 	_populate()
-
-
-## Hide the panel without destroying it.
-func hide_panel() -> void:
-	visible = false
-	print("[CoreOptionsPanel] hidden")
 
 
 ## Called by the system when fresh options data arrives and the panel is already open.
@@ -198,3 +168,9 @@ func _on_pad_device_changed(guid: String, ordinal: int) -> void:
 		print("[CoreOptionsPanel] physical pad → '%s' #%d" % [guid, ordinal])
 		_system.pad_guid = guid
 		_system.pad_ordinal = ordinal
+
+
+# ── Placement, for FloatingObjectPanel3D ─────────────────────────────────────
+
+func _target_node() -> Node3D:
+	return _system

@@ -7,7 +7,7 @@
 ## press and done on the second, and never while the console holding the game is
 ## on, which is the rule a memory card's saves follow too.
 class_name CartridgeOptionsPanel
-extends Node3D
+extends FloatingObjectPanel3D
 
 const FLOAT_HEIGHT := 0.25
 
@@ -16,7 +16,6 @@ const FLOAT_HEIGHT := 0.25
 ## adopt_external_ui. Read through _sysid()/_rom()/_label()/_save_id() so both
 ## kinds answer the same way.
 var _cart: Object = null
-var _camera: Node3D = null
 ## Set when another panel hosts a COPY of the UI (the core options Cartridge tab).
 ## This panel then drives that copy as well as its own quad — it does not stop
 ## owning the quad, and the two are never on screen at the same moment.
@@ -44,29 +43,11 @@ const ARM_SECONDS := 3.0
 	get_node_or_null("CartOptionsViewport") as XRToolsViewport2DIn3D
 
 
-func _ready() -> void:
-	top_level = true
-	visible = false
-
-
 ## Repopulate targets: this panel's own quad when it is up, and the embedded copy
 ## in the core options Cartridge tab whenever that exists. Without the second the
 ## embedded list never refreshes, because this node is never `visible`.
 func _showing() -> bool:
 	return visible or is_instance_valid(_external_ui)
-
-
-func _process(_delta: float) -> void:
-	if not visible:
-		return
-	# Only ever visible for a cartridge in the room; a stand-in target has no
-	# position to float above.
-	var cart := _cart as Node3D
-	if cart != null and is_instance_valid(cart):
-		global_position = cart.global_position + Vector3(0, FLOAT_HEIGHT, 0)
-	if _camera and is_instance_valid(_camera):
-		look_at(_camera.global_position, Vector3.UP)
-		rotate_object_local(Vector3.UP, PI)
 
 
 func show_for(cart: RetroCartridge, camera: Node3D) -> void:
@@ -78,10 +59,6 @@ func show_for(cart: RetroCartridge, camera: Node3D) -> void:
 	_ensure_ui_connected()
 	_populate()
 	_refresh_server_list()
-
-
-func hide_panel() -> void:
-	visible = false
 
 
 ## Drive a UI that lives somewhere else — the core options panel's Cartridge tab
@@ -814,3 +791,13 @@ func _on_server_state_requested(state_id: String) -> void:
 		if str((e as Dictionary)["state_id"]) == state_id:
 			StateSync.download(core, _rom(), e as Dictionary)
 			return
+
+
+# ── Placement, for FloatingObjectPanel3D ─────────────────────────────────────
+
+func _target_node() -> Node3D:
+	return _cart as Node3D
+
+
+func _float_height() -> float:
+	return FLOAT_HEIGHT

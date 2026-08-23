@@ -5,7 +5,7 @@
 ## Opened/closed via show_for()/hide_panel(); also has an in-UI ✕ close button.
 ## Mirrors BookOptionsPanel / VCROptionsPanel.
 class_name TVOptionsPanel
-extends Node3D
+extends FloatingObjectPanel3D
 
 ## Gap between the top of the set and the bottom edge of the panel.
 const CLEARANCE := 0.10
@@ -17,31 +17,13 @@ const FLOAT_HEIGHT := 0.55
 const UI_SCENE := preload("res://Scenes/UI/tv_options_2d.tscn")
 
 var _tv: RetroTV = null
-var _camera: Node3D = null
 ## Top of the owning set above its origin, in the set's own metres at scale 1.
 ## Measured once per open and multiplied by the live display scale every frame,
 ## so dragging the size slider carries the panel with it without re-sweeping the
 ## cabinet's meshes each tick.
 var _tv_top := 0.0
-# Guard so we only wire the 2D UI signals once (the SubViewport persists).
-var _ui_connected := false
 
 @onready var _viewport_node: XRToolsViewport2DIn3D = $TVOptionsViewport
-
-
-func _ready() -> void:
-	top_level = true
-	visible = false
-
-
-func _process(_delta: float) -> void:
-	if not visible:
-		return
-	if _tv and is_instance_valid(_tv):
-		global_position = _anchor()
-	if _camera and is_instance_valid(_camera):
-		look_at(_camera.global_position, Vector3.UP)
-		rotate_object_local(Vector3.UP, PI)
 
 
 # ── Public API ─────────────────────────────────────────────────────────────────
@@ -61,11 +43,6 @@ func show_for(tv: RetroTV, camera: Node3D) -> void:
 		_viewport_node.scene = UI_SCENE
 	_ensure_ui_connected()
 	_populate()
-
-
-## Hide the panel without destroying it.
-func hide_panel() -> void:
-	visible = false
 
 
 # ── Placement ─────────────────────────────────────────────────────────────────
@@ -193,3 +170,9 @@ func _on_scale_committed(factor: float) -> void:
 		_tv.set_tv_scale(factor)
 		NetworkManager.report_event(NetObjectSync.EV_TV_SIZE,
 			{"tv": _tv, "scale": factor})
+
+
+# ── Placement, for FloatingObjectPanel3D ─────────────────────────────────────
+
+func _target_node() -> Node3D:
+	return _tv

@@ -42,6 +42,7 @@ func _ready() -> void:
 	_test_backup_notice()
 	_test_panel_chrome()
 	await _test_floating_panels()
+	_test_panels_with_their_own_anchor()
 	_restore_ledger()
 	print("[state-ui] ---- %d passed, %d failed ----" % [_pass, _fail])
 	get_tree().quit(1 if _fail > 0 else 0)
@@ -495,7 +496,8 @@ func _test_floating_panels() -> void:
 			["dvd_options_panel", "_dvd", 0.42],
 			["mouse_options_panel", "_mouse", 0.3],
 			["vcr_options_panel", "_vcr", 0.42],
-			["memory_card_panel", "_card", 0.32]]:
+			["memory_card_panel", "_card", 0.32],
+			["cartridge_options_panel", "_cart", 0.25]]:
 		var file: String = entry[0]
 		var scr := load("res://Scripts/UI/panels/%s.gd" % file) as GDScript
 		var base := scr.get_base_script() as GDScript
@@ -506,3 +508,26 @@ func _test_floating_panels() -> void:
 		_ok("panel/%s reports no subject before it is shown" % file,
 			inst._target_node() == null)
 		inst.free()
+
+
+## The three panels whose placement is not "straight up from the origin": the
+## television measures the set's own top so the panel clears a grown screen, the
+## poster steps off the surface it is stuck to, and the core panel clears the
+## tower. They share the base's _process and override _anchor instead, so what
+## matters is that the override is really theirs and not the base's default.
+func _test_panels_with_their_own_anchor() -> void:
+	var base := load("res://Scripts/UI/panels/floating_object_panel_3d.gd") as GDScript
+	for file in ["tv_options_panel", "poster_options_panel", "core_options_panel"]:
+		var scr := load("res://Scripts/UI/panels/%s.gd" % file) as GDScript
+		_ok("anchor/%s uses the shared base" % file,
+			scr.get_base_script() == base)
+		# Read from the source, not get_script_method_list(): that reports
+		# inherited methods too, so it says every panel has _process whether it
+		# declares one or not -- which is how this case first passed while
+		# asserting nothing. scene_tests' vlc/ group reads source for the same
+		# reason.
+		var src := FileAccess.get_file_as_string("res://Scripts/UI/panels/%s.gd" % file)
+		_ok("anchor/%s declares its own _anchor" % file,
+			src.contains("func _anchor() -> Vector3:"))
+		_ok("anchor/%s no longer carries a copy of _process" % file,
+			not src.contains("func _process("))
