@@ -234,11 +234,18 @@ func _apply_system_size() -> void:
 		m.size = s
 		body.mesh = m
 
+	# The cart, exactly. This box is the RigidBody's own, so it is what the cart
+	# RESTS on as well as what a hand grabs, and padding it puts the shell in the
+	# air: a 7 mm Game Boy Advance cart inside a 40 mm box laid its label 16.5 mm
+	# above the table it was supposedly lying on. Memory cards (memory_card.tscn,
+	# 6 mm) have always matched their mesh here and are no harder to pick up,
+	# because a hand's reach is XRToolsFunctionPickup's 125 mm grab sphere — the
+	# old 25 mm of padding was ~10% of a reach that already dwarfed the card.
+	# Aim padding, which a ray really does need, lives on PointerArea below.
 	var col := get_node_or_null("CollisionShape3D") as CollisionShape3D
 	if col and col.shape is BoxShape3D:
 		var shape := col.shape.duplicate() as BoxShape3D
-		# Grab padding: keep tiny carts (nds is 3.3 cm) comfortably pickable.
-		shape.size = Vector3(maxf(s.x, 0.05), maxf(s.y, 0.05), maxf(s.z + 0.025, 0.04))
+		shape.size = s
 		col.shape = shape
 
 	var label_mesh := get_node_or_null("LabelMesh") as MeshInstance3D
@@ -253,10 +260,18 @@ func _apply_system_size() -> void:
 		lbl.position = Vector3(0, s.y * 0.125, s.z / 2.0 + 0.0045)
 		lbl.width = s.x * 2000.0
 
+	# The AIM target keeps the padding, computed from the card rather than from the
+	# grab box it used to be derived off. A ray has to be put on a 33 mm card edge-on
+	# from across the room, and this StaticBody is 21:XRPointer with mask 0, so a
+	# volume larger than the shell costs nothing physical. (It is pulled back to the
+	# card itself the moment a machine is holding one — see _tighten_pointer_box.)
 	var pointer_col := get_node_or_null("PointerArea/CollisionShape3D") as CollisionShape3D
-	if pointer_col and pointer_col.shape is BoxShape3D and col:
+	if pointer_col and pointer_col.shape is BoxShape3D:
 		var pshape := pointer_col.shape.duplicate() as BoxShape3D
-		pshape.size = (col.shape as BoxShape3D).size + Vector3(0.04, 0.04, 0)
+		pshape.size = Vector3(
+			maxf(s.x, 0.05) + 0.04,
+			maxf(s.y, 0.05) + 0.04,
+			maxf(s.z + 0.025, 0.04))
 		pointer_col.shape = pshape
 
 	_apply_floppy_shell()
