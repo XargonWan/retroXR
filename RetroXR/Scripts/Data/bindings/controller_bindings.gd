@@ -188,26 +188,11 @@ const LIGHTGUN_SOURCE_LABELS: Dictionary = {
 # ── File I/O ──────────────────────────────────────────────────────────────────
 
 static func _load_file() -> Dictionary:
-    if not FileAccess.file_exists(SAVE_PATH):
-        return {}
-    var f := FileAccess.open(SAVE_PATH, FileAccess.READ)
-    if f == null:
-        return {}
-    var text := f.get_as_text()
-    f.close()
-    var result: Variant = JSON.parse_string(text)
-    if result is Dictionary:
-        return result
-    return {}
+    return JsonStore.read_dict(SAVE_PATH, "ControllerBindings")
 
 
 static func _save_file(data: Dictionary) -> void:
-    var f := FileAccess.open(SAVE_PATH, FileAccess.WRITE)
-    if f == null:
-        push_error("ControllerBindings: cannot write to %s" % SAVE_PATH)
-        return
-    f.store_string(JSON.stringify(data, "\t"))
-    f.close()
+    JsonStore.write_dict(SAVE_PATH, data, "ControllerBindings")
 
 # ── Public API ────────────────────────────────────────────────────────────────
 

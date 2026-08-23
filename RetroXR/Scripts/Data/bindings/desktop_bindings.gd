@@ -70,32 +70,17 @@ static func managed_actions() -> Array:
 
 
 static func _load_file() -> Dictionary:
-	if not FileAccess.file_exists(SAVE_PATH):
-		return {}
-	var text := FileAccess.get_file_as_string(SAVE_PATH)
-	if text.is_empty():
-		return {}
-	var parsed: Variant = JSON.parse_string(text)
-	if not parsed is Dictionary:
-		push_warning("DesktopBindings: failed to parse %s" % SAVE_PATH)
-		return {}
-	var data: Dictionary = parsed as Dictionary
+	var data := JsonStore.read_dict(SAVE_PATH, "DesktopBindings")
 	# Legacy shape: a flat action -> event dict, written before there were
 	# layers. Read it as the global layer rather than discarding it, or every
 	# desktop player loses their key map the first time they launch this build.
-	if not data.has("global") and not data.has("per_system"):
+	if not data.is_empty() and not data.has("global") and not data.has("per_system"):
 		return {"global": data}
 	return data
 
 
 static func _save_file(data: Dictionary) -> void:
-	var f := FileAccess.open(SAVE_PATH, FileAccess.WRITE)
-	if f == null:
-		push_error("DesktopBindings: cannot write to %s (error %d)"
-			% [SAVE_PATH, FileAccess.get_open_error()])
-		return
-	f.store_string(JSON.stringify(data, "	"))
-	f.close()
+	JsonStore.write_dict(SAVE_PATH, data, "DesktopBindings")
 
 
 ## Put one layer's events into the live InputMap.

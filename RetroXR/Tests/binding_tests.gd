@@ -59,6 +59,7 @@ func _ready() -> void:
 	_test_desktop_layers()
 	_test_desktop_legacy_file()
 	_test_xr_identity()
+	_test_json_store()
 
 	_restore()
 	print("[test] ---- %d passed, %d failed ----" % [_pass, _fail])
@@ -719,3 +720,58 @@ func _test_xr_identity() -> void:
 			"0300000033280000502400000100000000", {}))
 	_eq("pads/the GUID vendor field is read low byte first",
 		GamepadBindings.vendor_from_guid("0300000033280000502400000100000000"), 0x2833)
+
+
+# ── JsonStore ─────────────────────────────────────────────────────────────────
+#
+# The store all three binding files now read and write through. The round-trip
+# cases above already prove it loads and saves; these cover the property it was
+# extracted to add, which none of them can see: a write either lands whole or
+# leaves what was there alone.
+
+const JS_DIR := "user://__jsonstore_selftest"
+
+
+func _test_json_store() -> void:
+	DirAccess.make_dir_recursive_absolute(JS_DIR)
+	var path := JS_DIR.path_join("store.json")
+
+	_ok("json/a missing file reads as empty",
+		JsonStore.read_dict(path).is_empty())
+
+	_ok("json/a write reports success", JsonStore.write_dict(path, {"a": 1}))
+	_eq("json/and round-trips", int(JsonStore.read_dict(path).get("a", 0)), 1)
+	# The staging file is an implementation detail the caller must never find.
+	_ok("json/no staging file is left behind",
+		not FileAccess.file_exists(path + ".part"))
+
+	# The whole point of staging: a half-written store must not replace a good
+	# one. Simulated by leaving a stale .part in the way, which is what a process
+	# killed mid-write leaves behind.
+	var stale := FileAccess.open(path + ".part", FileAccess.WRITE)
+	stale.store_string("{ truncated")
+	stale.close()
+	_ok("json/a stale staging file does not become the store",
+		int(JsonStore.read_dict(path).get("a", 0)) == 1)
+	_ok("json/and the next write clears it", JsonStore.write_dict(path, {"a": 2}))
+	_ok("json/leaving none behind", not FileAccess.file_exists(path + ".part"))
+	_eq("json/with the new value", int(JsonStore.read_dict(path).get("a", 0)), 2)
+
+	# A corrupt store reads as empty rather than throwing, because every caller
+	# treats {} as "nothing saved yet" and would otherwise take the parse error
+	# on a code path that has no way to report it.
+	var bad := FileAccess.open(path, FileAccess.WRITE)
+	bad.store_string("{ this is not json")
+	bad.close()
+	_ok("json/a corrupt store reads as empty", JsonStore.read_dict(path).is_empty())
+
+	# A JSON array is valid JSON and not a store.
+	var arr := FileAccess.open(path, FileAccess.WRITE)
+	arr.store_string("[1, 2, 3]")
+	arr.close()
+	_ok("json/so does a file holding the wrong shape",
+		JsonStore.read_dict(path).is_empty())
+
+	DirAccess.remove_absolute(path)
+	DirAccess.remove_absolute(path + ".part")
+	DirAccess.remove_absolute(JS_DIR)
