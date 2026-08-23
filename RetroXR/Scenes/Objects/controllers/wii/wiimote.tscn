@@ -546,7 +546,7 @@ mesh = SubResource("SphereMesh_dot")
 surface_material_override/0 = SubResource("Mat_dot")
 
 [node name="GrabPoint" type="Marker3D" parent="." unique_id=841561898]
-transform = Transform3D(1, 0, 0, 0, 0.70710677, -0.70710677, 0, 0.70710677, 0.70710677, 0, 0, 0.012)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0.012)
 visible = false
 script = ExtResource("3_grabpoint")
 
