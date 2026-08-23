@@ -269,13 +269,27 @@ albedo_color = Color(0.06, 0.07, 0.12, 1)
 [sub_resource type="BoxShape3D" id="BoxShape3D_cover"]
 size = Vector3(0.032, 0.008, 0.058)
 
-; 1 mm thick, not 2. It stands proud of the BAY FLOOR now rather than of the
-; shell's outer skin, and the floor is only 1.2 mm above the cover's inner face.
-[sub_resource type="BoxMesh" id="BoxMesh_sync"]
-size = Vector3(0.008, 0.001, 0.008)
+; SYNC is the one red thing on the remote, so it gets its own material rather than
+; the grey the 1/2/-/+ caps share. Its whole job is to be findable in a recess the
+; player has just opened a lid to reach.
+[sub_resource type="StandardMaterial3D" id="Mat_sync"]
+albedo_color = Color(0.72, 0.13, 0.11, 1)
+roughness = 0.5
 
-[sub_resource type="BoxShape3D" id="BoxShape3D_sync"]
-size = Vector3(0.01, 0.006, 0.01)
+; ROUND, and 1 mm thick rather than 2. It stands proud of the BAY FLOOR now rather
+; than of the shell's outer skin, and the floor is only 1.2 mm above the cover's
+; inner face. A CylinderMesh is +Y-aligned by default, which is already the axis
+; this button travels on, so it needs no rotation of its own.
+[sub_resource type="CylinderMesh" id="CylMesh_sync"]
+top_radius = 0.004
+bottom_radius = 0.004
+height = 0.001
+radial_segments = 20
+rings = 1
+
+[sub_resource type="CylinderShape3D" id="CylShape_sync"]
+radius = 0.005
+height = 0.006
 
 ; The expansion socket at the butt, and the recess drawn inside it.
 [sub_resource type="BoxMesh" id="BoxMesh_expansion"]
@@ -658,7 +672,7 @@ shape = SubResource("BoxShape3D_cover")
 ; open, and with nothing standing proud for a fingertip to find. It now sits flush
 ; at the top and 2 mm proud, with the cover clearing it by 1 mm when shut.
 [node name="SyncButton" type="Area3D" parent="."]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.0125, 0.03)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.006, -0.0125, 0.056)
 collision_layer = 0
 collision_mask = 0
 ;
@@ -672,10 +686,11 @@ collision_mask = 0
 ;     ready and only re-arms at COVER_OPEN_DEG, so there is no reaching through
 ;     the lid — which matters far more for a touch than it did for a trigger,
 ;     because touch has no line of sight either.
-;   * It cannot be fired by reaching for the cover. The hinge engages inside
-;     22 mm of its own origin, and at the 45 degrees SYNC needs to be live at all
-;     that origin has swung 42 mm away from this one — so a 9 mm touch sphere
-;     leaves 11 mm between the two volumes. Shut, the gap is still 32 mm.
+;   * It cannot be fired by reaching for the cover, and that survives having been
+;     moved into the cover's own corner. The two are 10 mm apart with the lid shut
+;     — but SYNC is DEAD shut, and by the 45 degrees it needs to be live at all
+;     the hinge has swung to (0, -71.5, 38.9) mm, 62 mm from this cap. A 30 mm
+;     engage sphere and a 9 mm touch sphere leave 23 mm of air between them.
 ;
 ; It also retires the conflict the old arrangement was built around: a trigger
 ; pull aimed here used to swing the cover shut instead. Touch and trigger are
@@ -687,19 +702,23 @@ trigger_radius = 0.009
 contact_margin = 0.006
 
 [node name="CollisionShape3D" type="CollisionShape3D" parent="SyncButton"]
-shape = SubResource("BoxShape3D_sync")
+shape = SubResource("CylShape_sync")
 
 [node name="ButtonMesh" type="MeshInstance3D" parent="SyncButton"]
-mesh = SubResource("BoxMesh_sync")
-surface_material_override/0 = SubResource("Mat_cap")
+mesh = SubResource("CylMesh_sync")
+surface_material_override/0 = SubResource("Mat_sync")
 
 ; Faces DOWN (-Y), because that is the side of the remote this button is on.
 ; Copied from a top-face cap it faced +Y instead, and a Label3D is double-sided,
 ; so it did not vanish — it showed its back and read mirrored. Text runs up
 ; toward the remote's front, which is the way round it falls when you tilt the
 ; underside toward you.
+; Offset back to the bay's centreline and toward the nose, which the button no
+; longer is. "SYNC" is about 16 mm of text on a 21 mm floor, so carried along to
+; the +X corner it would run up the bay's side wall; and carried to +Z it would
+; land on the end wall, which starts easing up 2.5 mm before z = 69.
 [node name="ButtonLabel" type="Label3D" parent="SyncButton"]
-transform = Transform3D(-1, 0, 0, 0, 0, -1, 0, -1, 0, 0, -0.0005, 0.011)
+transform = Transform3D(-1, 0, 0, 0, 0, -1, 0, -1, 0, -0.006, -0.0005, -0.011)
 pixel_size = 0.0005
 text = "SYNC"
 font_size = 12
@@ -721,7 +740,7 @@ cast_shadow = 0
 mesh = SubResource("SphereMesh_dot")
 surface_material_override/0 = SubResource("Mat_dot")
 
-; Pitched 30 degrees NOSE DOWN, because held at the hand's own attitude the remote
+; Pitched 45 degrees NOSE DOWN, because held at the hand's own attitude the remote
 ; sits far too flat: a Touch controller is gripped with the wrist already cocked
 ; back, and a Wii Remote is not.
 ;
@@ -729,14 +748,14 @@ surface_material_override/0 = SubResource("Mat_dot")
 ; object at hand * grab_point.inverse(), so the grab point carries the INVERSE of
 ; the offset you want to see. The remote's nose is -Z, and a rotation about +X
 ; takes +Z to -Y and so -Z to +Y -- nose UP. Wanting nose down means the object
-; needs Rx(-30), so this node carries Rx(+30).
+; needs Rx(-45), so this node carries Rx(+45).
 ;
 ; Written row-major, as a .tscn Transform3D always is: the rows are (1,0,0),
-; (0,cos,-sin),(0,sin,cos). Read as columns it is Rx(-30) and the remote pitches
+; (0,cos,-sin),(0,sin,cos). Read as columns it is Rx(-45) and the remote pitches
 ; up instead, which is the same trap that put four Wii ports and a Game Boy link
 ; socket in backwards.
 [node name="GrabPoint" type="Marker3D" parent="."]
-transform = Transform3D(1, 0, 0, 0, 0.8660254, -0.5, 0, 0.5, 0.8660254, 0, 0, 0.012)
+transform = Transform3D(1, 0, 0, 0, 0.70710678, -0.70710678, 0, 0.70710678, 0.70710678, 0, 0, 0.012)
 visible = false
 script = ExtResource("3_grabpoint")
 
