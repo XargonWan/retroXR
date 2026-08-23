@@ -33,6 +33,7 @@ var _state := PackedByteArray()
 var _state_frame := -1
 var _ref: Dictionary = {}
 var _ref_frame := -1
+var _opts: Dictionary = {}
 
 
 func _ready() -> void:
@@ -45,6 +46,10 @@ func _ready() -> void:
 			save_at = int(a.trim_prefix("--save-at="))
 		elif a.begins_with("--check-at="):
 			check_at = int(a.trim_prefix("--check-at="))
+		elif a.begins_with("--opt="):
+			var kv := a.trim_prefix("--opt=").split("=", true, 1)
+			if kv.size() == 2:
+				_opts[kv[0]] = kv[1]
 	if rom.is_empty():
 		print("[div] need --rom=")
 		get_tree().quit(2)
@@ -60,6 +65,9 @@ func _ready() -> void:
 	# Gated so the core can be PARKED for a snapshot: reading core memory from
 	# this thread races an emulation thread that is still running.
 	_lib.SetNetplayMode(true, 0x1, 0)
+	for k: Variant in _opts:
+		_lib.SetCoreOption(str(k), str(_opts[k]))
+		print("[div] option %s = %s" % [str(k), str(_opts[k])])
 	_lib.StartContent(root_dir, core, rom)
 	print("[div] %s / %s  save@%d check@%d" % [core, rom.get_file(), save_at, check_at])
 
