@@ -34,6 +34,22 @@ const HINT_HEIGHT := 0.10
 const BUTTON_PRESS := 0.0015
 const ANIM_WEIGHT := 0.4
 
+## How far the stick leans at full throw, in degrees.
+##
+## Modest on purpose. The stick's own mesh carries the boot that plugs the shell's
+## bore, so leaning it leans that too, and the boot's skirt is only buried about
+## 6 mm: at 25 mm across, much past this and its edge climbs out through the shell
+## on the low side.
+const STICK_TILT_DEG := 15.0
+
+## How far BELOW the stick's own origin it pivots, in metres.
+##
+## A real stick hinges on a gimbal down inside the shell, not at the point where
+## it leaves it. Pivoting at the origin swings the buried boot as much as the cap;
+## dropping the pivot 8 mm swings the cap more and the boot less, which is both
+## what the hardware does and what keeps the skirt inside the bore.
+const STICK_PIVOT_DROP := 0.008
+
 ## Gravity used to convert measured acceleration into g, matching the remote's.
 ## The core multiplies by the same constant on the way back in.
 const G := 9.80665
@@ -57,6 +73,14 @@ var _desktop_held := false
 
 var _locomotion_manager: LocomotionManager = null
 
+## Which controller's pointer this is currently blocking, or null.
+##
+## Held as the controller itself rather than as the left/right pair Wiimote and
+## LightGun keep, because a Nunchuk is only ever in one hand. That also makes the
+## shared count impossible to unbalance: blocking a second time is a no-op, and
+## releasing when nothing is held does nothing at all.
+var _blocking_ctrl: XRController3D = null
+
 # Motion
 var _prev_velocity := Vector3.ZERO
 var _accel_smoothed := Vector3.UP * G
@@ -67,9 +91,11 @@ var _nunchuk_map: Dictionary = ControllerBindings.DEFAULT_NUNCHUK_MAP.duplicate(
 @onready var _cable_attach_point: Node3D = $CableAttachPoint
 @onready var _c_button: MeshInstance3D = $CButton
 @onready var _z_button: MeshInstance3D = $ZButton
+@onready var _stick: MeshInstance3D = $Stick
 
 var _c_rest := Transform3D()
 var _z_rest := Transform3D()
+var _stick_rest := Transform3D()
 
 
 func _ready() -> void:
@@ -85,6 +111,7 @@ func _ready() -> void:
 	_hint = HeldHint.attach(self, true, HINT_HEIGHT)
 	_c_rest = _c_button.transform
 	_z_rest = _z_button.transform
+	_stick_rest = _stick.transform
 	_load_bindings()
 	_spawn_cable()
 	call_deferred("_find_locomotion")
@@ -123,6 +150,43 @@ func _update_locomotion_block() -> void:
 		ctrl_valid and _holding_ctrl.tracker == &"left_hand")
 	_locomotion_manager.set_block(_vr_block_owner(), LocomotionManager.CHANNEL_RIGHT,
 		ctrl_valid and _holding_ctrl.tracker == &"right_hand")
+
+
+## Stop the holding hand's laser pointing while this is in it.
+##
+## Without this the Nunchuk was the one thing in the room you could hold and still
+## have a ray coming out of your fist: RetroController, Wiimote, LightGun,
+## TVRemote and HandheldInput all block it, and this hid the controller model and
+## took the locomotion channel but left the pointer alone.
+##
+## Reference-counted through a `block_count` meta on the controller's
+## FunctionPointer, the same as those five, so several pickables can block one
+## pointer independently and it returns only when the last of them lets go. A
+## Nunchuk and the Wiimote it plugs into are very often one in each hand, which is
+## exactly the case a plain visible = false would get wrong.
+func _update_pointer_block(ctrl: XRController3D, should_block: bool) -> void:
+	var target: XRController3D = ctrl if should_block else null
+	if target == _blocking_ctrl:
+		return
+	_add_pointer_block(_blocking_ctrl, -1)
+	_add_pointer_block(target, 1)
+	_blocking_ctrl = target
+
+
+func _add_pointer_block(ctrl: XRController3D, delta_count: int) -> void:
+	if not is_instance_valid(ctrl):
+		return
+	var pointer: Node3D = ctrl.get_node_or_null("FunctionPointer")
+	if pointer == null:
+		return
+	var count: int = maxi(0, pointer.get_meta("block_count", 0) + delta_count)
+	pointer.set_meta("block_count", count)
+	pointer.visible = count == 0
+	# FunctionPickup._process_pointer_highlight reads the RayCast directly and
+	# never looks at visibility, so hiding the laser alone leaves it able to grab.
+	var ray: RayCast3D = pointer.get_node_or_null("RayCast") as RayCast3D
+	if ray:
+		ray.enabled = count == 0
 
 
 func reload_bindings() -> void:
@@ -205,6 +269,7 @@ func _on_grabbed_signal(_pickable: Node3D, by: Node3D) -> void:
 	_saved_by = by
 	_holding_ctrl = ctrl
 	_set_model_visible(ctrl, false)
+	_update_pointer_block(ctrl, true)
 	_update_locomotion_block()
 
 
@@ -218,6 +283,7 @@ func _on_dropped_signal(_pickable: Node3D) -> void:
 	if _hint:
 		_hint.on_dropped()
 	_set_model_visible(_holding_ctrl, true)
+	_update_pointer_block(_holding_ctrl, false)
 	_allow_drop = false
 	_saved_by = null
 	_holding_ctrl = null
@@ -234,6 +300,7 @@ func _rehold() -> void:
 		# Give its model back before forgetting it, or the player is left with an
 		# invisible controller.
 		_set_model_visible(_holding_ctrl, true)
+		_update_pointer_block(_holding_ctrl, false)
 		_saved_by = null
 		_holding_ctrl = null
 		_update_locomotion_block()
@@ -261,6 +328,7 @@ func _is_combo_pressed(ctrl: XRController3D) -> bool:
 
 func _drop_all() -> void:
 	_set_model_visible(_holding_ctrl, true)
+	_update_pointer_block(_holding_ctrl, false)
 	_allow_drop = true
 	_holding_ctrl = null
 	_update_locomotion_block()
@@ -272,7 +340,9 @@ func _exit_tree() -> void:
 	_allow_drop = true
 	# clear_owner and not two set_block(false) calls: a Nunchuk freed mid-hold
 	# never reaches _on_dropped_signal, and a block left behind is a hand that
-	# can never walk again.
+	# can never walk again. The pointer has exactly the same hazard, and releasing
+	# it takes no argument because _blocking_ctrl already knows whose it is.
+	_update_pointer_block(null, false)
 	if _locomotion_manager != null:
 		_locomotion_manager.clear_owner(_vr_block_owner())
 	super._exit_tree()
@@ -311,6 +381,7 @@ func _process(_delta: float) -> void:
 	var state := get_state()
 	_animate(_c_button, _c_rest, state.get("c", false))
 	_animate(_z_button, _z_rest, state.get("z", false))
+	_animate_stick(state.get("stick", Vector2.ZERO))
 
 
 ## Derive what this Nunchuk's accelerometer would read, the same way the remote
@@ -346,6 +417,28 @@ func accel_in_nunchuk_frame() -> Vector3:
 	var a := MotionFilter.deadband_motion(_accel_smoothed, G)
 	var local := global_transform.basis.orthonormalized().inverse() * (a / G)
 	return Vector3(-local.x, local.z, local.y)
+
+
+## Lean the stick the way the thumb is pushing it.
+##
+## The vector is the holding controller's own thumbstick, which is what get_state
+## already hands the remote, so the mesh and the value going to the core cannot
+## disagree about where the stick is.
+##
+## Built in the stick's OWN frame and then composed onto its rest transform, which
+## is the only way that survives the seat: the stick sits at 34.5 degrees off the
+## body, so "push forward" is not any one of the controller's axes and a rotation
+## applied in the parent frame leans it in a direction that has nothing to do with
+## the gate. +Y is up the stalk, so a push along the pad's Y tips the cap toward
+## the nose (local -Z) and a push along X tips it toward local +X.
+func _animate_stick(v: Vector2) -> void:
+	var tilt := deg_to_rad(STICK_TILT_DEG)
+	var lean := Vector2(v.x, v.y).limit_length(1.0)
+	var rot := Basis(Vector3.RIGHT, -lean.y * tilt) * Basis(Vector3.BACK, -lean.x * tilt)
+	var pivot := Vector3(0.0, -STICK_PIVOT_DROP, 0.0)
+	var about := Transform3D(Basis.IDENTITY, pivot) * Transform3D(rot, Vector3.ZERO) 		* Transform3D(Basis.IDENTITY, -pivot)
+	var tgt := _stick_rest * about
+	_stick.transform = _stick.transform.interpolate_with(tgt, ANIM_WEIGHT)
 
 
 func _animate(node: MeshInstance3D, rest: Transform3D, down: bool) -> void:
