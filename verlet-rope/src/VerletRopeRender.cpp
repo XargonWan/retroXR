@@ -269,9 +269,19 @@ void VerletRope::RenderCord(int p_cord)
     // are laid out along, so it decides which way the flat "ooo" faces. Take it
     // from the start anchor's basis, which is the connector the ribbon leaves.
     // With a single round cord the roll was invisible and this changes nothing.
+    //
+    // Resolved through the ObjectID rather than read off m_start_cached, which
+    // is not safe here: that cache is refreshed by ReconcileAnchors(), which
+    // only runs from Step() on the PHYSICS tick, while this is the RENDER tick.
+    // Free the start node and the two ticks disagree — worse at teardown, where
+    // physics has already stopped and _process still gets one more frame, so the
+    // cache is guaranteed stale. Step() also returns before reconciling when the
+    // rope has no points, so an empty rope never refreshes it at all. Both left
+    // this line dereferencing freed memory (signal 11 in RenderCord, rdx
+    // 0xBAADF00D), which is what took motion_tests and time_of_day_tests down.
     Vector3 prev_side;
-    if (m_start_cached != nullptr)
-        prev_side = m_start_cached->get_global_transform().basis.orthonormalized().xform(m_ribbon_axis);
+    if (Node3D *start = GetStartNode(); start != nullptr)
+        prev_side = start->get_global_transform().basis.orthonormalized().xform(m_ribbon_axis);
     Vector3 prev_tangent(0, 1, 0);
     for (int i = 0; i < count; ++i)
     {
