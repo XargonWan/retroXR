@@ -361,13 +361,16 @@ static func _collect_stems(dir_path: String, out: PackedStringArray, depth: int)
 
 ## RomM ids the cache manifest still claims for a system, so a cover is only an
 ## orphan once its download is gone too.
+## Read-only, and deliberately not through a RommCacheManifest instance.
+##
+## scan() runs on a worker thread (options_view starts one for the cleanup
+## panel), and load_manifest() assigns the manifest's process-wide statics and
+## rebuilds both of its indexes. Doing that off the main thread races every
+## other toucher of those dictionaries — protect_file on each power-on,
+## evict_to_fit during a download — and the losing write can leave the cache
+## index empty, which reads to the player as every downloaded ROM vanishing.
 static func _romm_ids_for(systemid: String) -> PackedInt64Array:
-	var out := PackedInt64Array()
-	var mf := RommCacheManifest.new()
-	mf.load_manifest()
-	for id: int in mf.rom_ids_for_system(systemid):
-		out.append(id)
-	return out
+	return RommCacheManifest.rom_ids_on_disk(systemid)
 
 
 static func _walk_for_suffix(dir_path: String, suffix: String,

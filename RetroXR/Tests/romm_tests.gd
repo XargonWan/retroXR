@@ -415,6 +415,39 @@ func _test_cache_paths() -> void:
 	_ok("cache/no traversal out of the system dir",
 		escaped.is_empty() or escaped.begins_with(root.path_join("nes")), escaped)
 
+	# The manifest keeps its entries and both indexes in process-wide statics, so
+	# a background scan that wants to READ it must not go through load_manifest.
+	# StorageCleanup.scan() runs on a worker thread; if its manifest read still
+	# published into those dictionaries it would race protect_file (every
+	# power-on) and evict_to_fit (every download), and the losing write empties
+	# the cache index — which the player sees as every downloaded ROM vanishing.
+	#
+	# Asserted with a sentinel written straight into the shared dictionary and
+	# never saved. In-memory only for two reasons: the player's real manifest is
+	# the only file this class writes, and — more importantly — a sentinel that
+	# existed on disk too would survive a reload, so the case could not go red.
+	# Because it is unsaved, load_manifest() would wipe it, which is exactly the
+	# signal. Point rom_ids_on_disk back at load_manifest and this fails.
+	var live := RommCacheManifest.new()
+	live.load_manifest()
+	var sentinel := RommCacheManifest.make_key("__romm_selftest_sys", "Sentinel.nes")
+	live._entries[sentinel] = {
+		"rom_id": 424242, "systemid": "__romm_selftest_sys", "fs_name": "Sentinel.nes",
+		"launch": "Sentinel.nes", "members": [], "size": 0, "md5": "",
+		"downloaded_at": "", "last_used_at": 0.0,
+	}
+	_ok("cache/the sentinel is in the shared view", live._entries.has(sentinel))
+
+	var off_disk := RommCacheManifest.rom_ids_on_disk("__romm_selftest_sys")
+	_ok("cache/an on-disk read leaves the shared entries alone",
+		live._entries.has(sentinel), "the read replaced the live manifest")
+	_ok("cache/and reports only what is on disk",
+		not off_disk.has(424242), str(off_disk))
+
+	live._entries.erase(sentinel)
+	_ok("cache/sentinel cleaned up without touching the file",
+		not live._entries.has(sentinel))
+
 
 # ---------------------------------------------------------------------------
 # RomLibrary.scan_roms — the disk walk. Uses a scratch system folder under the

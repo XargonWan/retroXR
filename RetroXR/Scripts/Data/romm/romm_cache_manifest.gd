@@ -28,29 +28,58 @@ var _entries: Dictionary:
 		_shared_entries = value
 
 
-func load_manifest() -> void:
+## Parse the manifest file into a fresh dictionary, touching no shared state.
+##
+## Split out of load_manifest so a caller that only wants to READ the manifest
+## can do so without publishing into the process-wide statics below — which is
+## not safe from anything but the main thread. Returns {} for a missing or
+## unreadable file, which is the same "start empty" the loader has always used.
+static func read_entries() -> Dictionary:
 	var path := manifest_path()
 	if not FileAccess.file_exists(path):
-		_entries = {}
-		_rebuild_indexes()
-		return
+		return {}
 	var f := FileAccess.open(path, FileAccess.READ)
 	if f == null:
-		return
+		return {}
 	var json := JSON.new()
 	if json.parse(f.get_as_text()) != OK:
 		push_warning("[RommCache] JSON parse error, starting empty")
-		_entries = {}
-		_rebuild_indexes()
-		return
+		return {}
 	var data: Dictionary = json.data if json.data is Dictionary else {}
 	var raw: Variant = data.get("entries", {})
-	_entries = {}
+	var out: Dictionary = {}
 	if raw is Dictionary:
 		for key: String in raw:
 			var value: Variant = raw[key]
 			if value is Dictionary:
-				_entries[key] = _normalise_group(key, value)
+				out[key] = _normalise_group(key, value)
+	return out
+
+
+## Every downloaded ROM id for one system, read straight off disk.
+##
+## The thread-safe half of rom_ids_for_system: a background scan must not reach
+## it through load_manifest, because that assigns _shared_entries and rebuilds
+## both indexes — process-wide state the main thread reads and writes at the
+## same time (protect_file on every power-on, evict_to_fit during a download).
+static func rom_ids_on_disk(systemid: String) -> PackedInt64Array:
+	var out := PackedInt64Array()
+	var entries := read_entries()
+	for key: String in entries:
+		var group: Dictionary = entries[key]
+		if str(group.get("systemid", "")) != systemid:
+			continue
+		var rom_id := int(group.get("rom_id", 0))
+		if rom_id != 0:
+			out.append(rom_id)
+	return out
+
+
+func load_manifest() -> void:
+	var path := manifest_path()
+	if FileAccess.file_exists(path) and FileAccess.open(path, FileAccess.READ) == null:
+		return  # unreadable rather than absent: keep whatever is already loaded
+	_entries = read_entries()
 	_rebuild_indexes()
 
 
