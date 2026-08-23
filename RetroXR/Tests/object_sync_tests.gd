@@ -545,15 +545,42 @@ func _test_motion(p: Pair) -> void:
 		Vector3(1.5, 1.0, 0.25)) as RigidBody3D
 	var id := p.host_os.id_of(host_card)
 	var client_card := p.client_os.node_for_id(id) as RigidBody3D
+	# Held still for the assertion, because the replica is always one
+	# XFORM_INTERVAL behind the host and this compares it against the host's
+	# LIVE pose. The card drifts at 0.4-0.6 m/s left to itself, and at 15 Hz
+	# that is 27-38 mm of travel per send -- against a 10 mm tolerance. The
+	# case then passed only when a poll happened to land just after a packet,
+	# which is why it failed about half the time in the full suite and never
+	# on its own, where the card is younger and slower.
+	#
+	# gravity_scale, not freeze: MemoryCard is an XRToolsPickable, which
+	# snapshots freeze into restore_freeze on pick-up, and the grab cases
+	# further down this same suite would inherit whatever was left set.
+	#
+	# can_sleep matters as much as gravity here: _host_send_xforms skips a
+	# sleeping body on purpose, so a card that is merely held still stops
+	# being sent at all and the replica is stranded wherever it last heard
+	# about -- 3.4 m away, the whole length of the move. Still AND awake.
+	var gravity_was := host_card.gravity_scale
+	var can_sleep_was := host_card.can_sleep
+	host_card.gravity_scale = 0.0
+	host_card.can_sleep = false
+	host_card.linear_velocity = Vector3.ZERO
+	host_card.angular_velocity = Vector3.ZERO
 	host_card.sleeping = false
 	host_card.global_position = Vector3(4.0, 1.5, -2.0)
 	host_card.rotation = Vector3(0.2, -0.5, 0.1)
 	p.host_os._host_send_xforms()
 	_ok(await _until(func() -> bool:
 		return client_card.global_position.distance_to(host_card.global_position) < 0.01),
-		"motion/a distant host body snaps to the authoritative pose")
-	_ok(client_card.quaternion.angle_to(host_card.quaternion) < 0.02,
-		"motion/rotation follows with the position")
+		"motion/a distant host body snaps to the authoritative pose",
+		"%.3f m apart" % client_card.global_position.distance_to(host_card.global_position))
+	# Its own wait rather than a bare read: position can cross the line one
+	# frame before rotation does, and asserting immediately caught that.
+	_ok(await _until(func() -> bool:
+		return client_card.quaternion.angle_to(host_card.quaternion) < 0.02),
+		"motion/rotation follows with the position",
+		"%.3f rad apart" % client_card.quaternion.angle_to(host_card.quaternion))
 
 	# A locally-held replica must ignore stale host transform packets.
 	p.client_os._held_by_me[id] = true
@@ -565,6 +592,8 @@ func _test_motion(p: Pair) -> void:
 	_vec(client_card.global_position, held_at,
 		"motion/host interpolation does not fight a local grab")
 	p.client_os._held_by_me.erase(id)
+	host_card.gravity_scale = gravity_was
+	host_card.can_sleep = can_sleep_was
 
 
 func _test_authority(p: Pair) -> void:
@@ -1174,7 +1203,16 @@ func _test_avatars(p: Pair) -> void:
 	_ok(await _until(func() -> bool:
 		return host_view._buf.size() > 0 and client_view._buf.size() > 0, 300),
 		"avatars/head and hand pose packets travel in both directions")
-	await _frames(10)
+	# Wait for the poses to be APPLIED, not for a fixed ten frames. A packet
+	# landing in _buf is not the same event as the avatar consuming it, and
+	# the guess was occasionally short -- the right hand read (0,0,0) because
+	# the assertion ran a frame or two before the pose was drained.
+	await _until(func() -> bool:
+		var head_ok: bool = host_view.get_node("Head").position.is_equal_approx(
+			Vector3(-1, 2.5, 0.5))
+		var hand_ok: bool = client_view.get_node("RightHand").position.is_equal_approx(
+			Vector3(1.4, 1.5, 1.6))
+		return head_ok and hand_ok)
 	_vec(host_view.get_node("Head").position, Vector3(-1, 2.5, 0.5),
 		"avatars/the host sees the client's head")
 	_vec(host_view.get_node("LeftHand").position, Vector3(-1.1, 1.0, 0.2),
@@ -1353,13 +1391,16 @@ func _want(group: String) -> bool:
 	return _only.is_empty() or _only == group
 
 
-func _ok(condition: bool, message: String) -> void:
+## `detail` is printed only on failure, for the cases where knowing HOW far off
+## it was is the difference between a real regression and a tolerance to widen.
+func _ok(condition: bool, message: String, detail: String = "") -> void:
 	_ran += 1
 	if condition:
 		print("[object-sync] ok   %s" % message)
 	else:
 		_fail += 1
-		print("[object-sync] FAIL %s" % message)
+		print("[object-sync] FAIL %s%s"
+			% [message, "  — " + detail if not detail.is_empty() else ""])
 
 
 func _eq(got: Variant, want: Variant, message: String) -> void:
