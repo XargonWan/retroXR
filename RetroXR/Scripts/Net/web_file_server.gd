@@ -520,7 +520,15 @@ func _resolve(rel: String) -> String:
 	if remainder.is_empty():
 		return base
 	var abs_path := (base + "/" + remainder).simplify_path()
-	return abs_path if abs_path.begins_with(base) else ""
+	# The separator is load-bearing. A bare begins_with(base) also accepts a
+	# SIBLING whose name merely starts with the root's — "…/retroxr/../retroxr_evil
+	# /secret" simplifies to "…/retroxr_evil/secret", which passed the old check
+	# and served a file from outside the root to any PIN-authed client on the LAN.
+	# Comparing against base + "/" confines it, and the equality keeps the root
+	# directory itself resolvable.
+	if abs_path == base or abs_path.begins_with(base + "/"):
+		return abs_path
+	return ""
 
 
 ## True if `abs_path` is one of the named-root base directories (never deletable/downloadable).
