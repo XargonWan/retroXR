@@ -281,25 +281,31 @@ func _test_playstation_hardware() -> void:
 	for i in range(20):
 		await get_tree().process_frame
 
-	# A controller plug carries a SnapGrabPoint with its own 180 about X, so the
-	# ports roll to compose with it. A memory card has no grab point, so the same
-	# roll simply turns it over -- which is what shipped.
-	var slot := psx.find_child("MemoryCardSlot", true, false) as XRToolsSnapZone
-	if slot != null:
-		slot.enabled = true
-		slot.pick_up_object(card)
-	for i in range(18):
-		await get_tree().process_frame
-	var rel := psx.global_transform.affine_inverse() * card.global_transform
-	_ok("psx/the memory card seats label-up", rel.basis.y.y > 0.9,
-		"up = %.3v" % rel.basis.y)
-
 	var model: Node3D = psx.find_child("Shell", true, false)
 	model = model.get_parent() if model != null else null
 	var eject := psx.find_child("EjectButton", true, false) as VRButton
 	if model == null or eject == null:
 		psx.queue_free()
 		return
+
+	# Two ways to seat a card wrong, and each has its own axis. A controller plug
+	# carries a SnapGrabPoint with its own 180 about X, so the ports roll to
+	# compose with it; a memory card has no grab point, so the same roll simply
+	# turns it OVER. Correcting that with a yaw then seated every card BACKWARDS,
+	# because the card's front tab is its +Z end and the connector is its -Z one.
+	# Measured against the shell rather than the cabinet: the front face is the
+	# model's +Z (MemCard1 at z +86 mm, JackSerial on the back panel at -86).
+	var slot := psx.find_child("MemoryCardSlot", true, false) as XRToolsSnapZone
+	if slot != null:
+		slot.enabled = true
+		slot.pick_up_object(card)
+	for i in range(18):
+		await get_tree().process_frame
+	var rel := model.global_transform.affine_inverse() * card.global_transform
+	_ok("psx/the memory card seats label-up", rel.basis.y.y > 0.9,
+		"up = %.3v" % rel.basis.y)
+	_ok("psx/and connector-first, tab out the front", rel.basis.z.z > 0.9,
+		"front = %.3v" % rel.basis.z)
 	eject.button_pressed.emit()
 	for i in range(22):
 		await get_tree().process_frame

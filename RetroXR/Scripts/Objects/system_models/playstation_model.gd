@@ -620,17 +620,21 @@ func port_plug_transform(index: int) -> Transform3D:
 ## The cabinet wires one card slot; use port 1's, the upper of the two openings
 ## on the left half of the front face.
 ##
-## A YAW of 180 about Y, and NOT the roll about Z the controller ports take, even
-## though both are front-facing sockets on the same face. The difference is the
-## thing being seated: a controller plug carries a SnapGrabPoint with its own 180
-## about X (controller_cable.tscn), so a roll composed with that flip comes out
-## upright with the connector inward. A memory card has NO grab point, so there
-## is nothing for the roll to compose with and it simply turns the card over --
-## which is what shipped, label down.
+## NO rotation at all, and in particular not the roll about Z the controller
+## ports take, even though both are front-facing sockets on the same face. The
+## difference is the thing being seated: a controller plug carries a SnapGrabPoint
+## with its own 180 about X (controller_cable.tscn), so a roll composed with that
+## flip comes out upright with the connector inward. A memory card has NO grab
+## point, so there is nothing for the roll to compose with -- the roll simply
+## turns the card over, which is how it first shipped, label down.
 ##
-## Measured rather than reasoned: the card's connector lip sits at z +27.5 mm in
-## its own frame and its CardLabel faces its own +Y, so the card wants +Y kept up
-## and +Z turned to face into the shell. That is a yaw.
+## Which end goes in has to be MEASURED, and the card's own names are a trap:
+## MCard_Top.001 is the front tab you hold, the white insert that stands proud of
+## the console at z +27.5 mm, while the edge connector is MCard_Board, spanning
+## z -26.2 to +4.7. So the card mates along its own -Z. The shell's front face is
+## +Z (MemCard1 sits at z +86 mm, JackSerial on the back panel at -86), so -Z is
+## already into the console and the card wants leaving alone. Reading the +27.5 mm
+## insert as the connector is what put a yaw here and seated every card backwards.
 func configure_memory_card_slot(slot: Node3D, index: int) -> void:
 	# Slot A only: this shell seats one card, and card_slot_count says so, but the
 	# base calls once per slot the machine shows and a stray index must not land a
@@ -644,7 +648,7 @@ func configure_memory_card_slot(slot: Node3D, index: int) -> void:
 	if _shell_mesh("MemCard1") == null:
 		return
 	slot.position = _mesh_center_local("MemCard1")
-	slot.rotation_degrees = Vector3(0.0, 180.0, 0.0)
+	slot.rotation_degrees = Vector3.ZERO
 
 
 # --- A/V --------------------------------------------------------------------
