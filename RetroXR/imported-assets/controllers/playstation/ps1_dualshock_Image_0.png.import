@@ -3,9 +3,11 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://dw256t6caij2v"
-path="res://.godot/imported/ps1_dualshock_Image_0.png-df5a6dfb59d00cac92fde5cfcc9e7b2e.ctex"
+path.s3tc="res://.godot/imported/ps1_dualshock_Image_0.png-df5a6dfb59d00cac92fde5cfcc9e7b2e.s3tc.ctex"
+path.etc2="res://.godot/imported/ps1_dualshock_Image_0.png-df5a6dfb59d00cac92fde5cfcc9e7b2e.etc2.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["s3tc_bptc", "etc2_astc"],
+"vram_texture": true
 }
 generator_parameters={
 "md5": "3c694103d0630d6e9a249ea44f2b044c"
@@ -14,11 +16,11 @@ generator_parameters={
 [deps]
 
 source_file="res://imported-assets/controllers/playstation/ps1_dualshock_Image_0.png"
-dest_files=["res://.godot/imported/ps1_dualshock_Image_0.png-df5a6dfb59d00cac92fde5cfcc9e7b2e.ctex"]
+dest_files=["res://.godot/imported/ps1_dualshock_Image_0.png-df5a6dfb59d00cac92fde5cfcc9e7b2e.s3tc.ctex", "res://.godot/imported/ps1_dualshock_Image_0.png-df5a6dfb59d00cac92fde5cfcc9e7b2e.etc2.ctex"]
 
 [params]
 
-compress/mode=0
+compress/mode=2
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0
@@ -40,4 +42,4 @@ process/normal_map_invert_y=false
 process/hdr_as_srgb=false
 process/hdr_clamp_exposure=false
 process/size_limit=0
-detect_3d/compress_to=1
+detect_3d/compress_to=0
