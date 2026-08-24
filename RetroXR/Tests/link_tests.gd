@@ -54,6 +54,7 @@ func _ready() -> void:
 	await _test_psx_lead_will_seat()
 	await _test_psx_cable_joins_a_pair()
 	await _test_every_lead_states_its_bus()
+	_test_restart_rule()
 	print("[link] ---- %d passed, %d failed ----" % [_pass, _fail])
 	get_tree().quit(1 if _fail > 0 else 0)
 
@@ -1754,3 +1755,93 @@ func _nearest_av_gap(machine: Node3D, x: float) -> float:
 		if n is RcaPort and not (n is LinkPort):
 			best = minf(best, absf((n as Node3D).position.x - x))
 	return best if is_finite(best) else INF
+
+
+# -- Who a re-formed bus power-cycles ----------------------------------------
+# _restart exists so a cartridge game that has gone past the screen where it
+# would have offered multiplayer gets another chance at it. These pin exactly
+# which machines that reaches, because the rule is destructive and asymmetric:
+# a reset costs a game with a cartridge a boot logo, and costs a machine whose
+# whole state arrived down the wire everything it had.
+#
+# Driven through _restart directly rather than through _watch, because _watch
+# reads LinkPeerCount off a running core and these must stay core-free. What
+# _watch decides is the `seat`/`live_seat` pair in each entry, and that is what
+# is varied here.
+
+class _FakeMachine extends Node:
+	var systemid := "game_boy_advance"
+	var rom_path := "/roms/game.gba"
+	var is_powered_on := true
+
+
+func _restart_seen(cable: LinkCable, ends: Array) -> Array:
+	var fired: Array = []
+	var tap := func(m: Node) -> void: fired.append(m)
+	cable.machine_restarted.connect(tap)
+	var typed: Array[Dictionary] = []
+	for e: Dictionary in ends:
+		typed.append(e)
+	cable._restart(typed)
+	cable.machine_restarted.disconnect(tap)
+	return fired
+
+
+func _end_for(machine: _FakeMachine, lib: Libretro, seat: int, live_seat: int) -> Dictionary:
+	return {"libretro": lib, "machine": machine, "port": 0,
+		"seat": seat, "live_seat": live_seat}
+
+
+func _test_restart_rule() -> void:
+	var cable := LinkCable.new()
+	var host := _FakeMachine.new()
+	var host_lib := Libretro.new()
+
+	# The case the rule is FOR: a cartridge machine that booted alone and has
+	# now found itself on a live wire.
+	var fired := _restart_seen(cable, [_end_for(host, host_lib, 0, -1)])
+	_ok("restart/a cartridge machine meeting the cable for the first time is restarted",
+		fired.has(host))
+
+	# Once it has been told, it is left alone.
+	fired = _restart_seen(cable, [_end_for(host, host_lib, 0, 0)])
+	_ok("restart/and is not restarted again at the same seat", fired.is_empty())
+
+	# A renumber. Two pairs merging into one four-way bus moves seats under
+	# machines that were already playing.
+	fired = _restart_seen(cable, [_end_for(host, host_lib, 2, 0)])
+	_ok("restart/a cartridge machine whose seat changed is restarted", fired.has(host))
+
+	# The single-pak client. Nothing to reboot into, and the program it was sent
+	# is its entire state, so neither branch may reach it.
+	var client := _FakeMachine.new()
+	client.rom_path = ""
+	var client_lib := Libretro.new()
+	fired = _restart_seen(cable, [_end_for(client, client_lib, 1, -1)])
+	_ok("restart/a machine with no cartridge is not restarted on first sight of the cable",
+		fired.is_empty())
+	fired = _restart_seen(cable, [_end_for(client, client_lib, 3, 1)])
+	_ok("restart/nor when its seat changes under it", fired.is_empty())
+
+	# Only the platform whose games sample the link at boot.
+	var snes := _FakeMachine.new()
+	snes.systemid = "super_nintendo"
+	var snes_lib := Libretro.new()
+	fired = _restart_seen(cable, [_end_for(snes, snes_lib, 0, -1)])
+	_ok("restart/a platform that does not sample the link at boot is never restarted",
+		fired.is_empty())
+
+	# THE HOST, stated outright. A single-pak host holds the cartridge, so the
+	# no-cartridge guard does not cover it: powering on a client re-forms the bus,
+	# the host is seen on a live wire for the first time, and it is reset in the
+	# middle of sending its program. This is a pinned FACT about today's rule,
+	# not an endorsement of it -- if it is ever made to survive that, this case
+	# is the one that has to change with it.
+	var solo := _FakeMachine.new()
+	var solo_lib := Libretro.new()
+	fired = _restart_seen(cable, [_end_for(solo, solo_lib, 0, -1)])
+	_ok("restart/the cartridge-holding host IS reset when a client joins it",
+		fired.has(solo))
+
+	for n: Node in [host, host_lib, client, client_lib, snes, snes_lib, solo, solo_lib, cable]:
+		n.free()
