@@ -353,9 +353,33 @@ func _restart(members: Array[Dictionary]) -> void:
 			continue
 		var machine_node: Node = end["machine"]
 		var systemid: String = ""
+		var loaded_rom: String = ""
 		if machine_node != null and is_instance_valid(machine_node):
 			systemid = str(machine_node.get("systemid"))
+			loaded_rom = str(machine_node.get("rom_path"))
 		if not SAMPLES_LINK_AT_BOOT.has(systemid):
+			continue
+		# Never a machine with no cartridge in it.
+		#
+		# Everything below is about a GAME that has gone past the screen where it
+		# would have offered multiplayer, and a power cycle is the only way the
+		# room can get it back there. A machine with nothing in it is not playing
+		# a game: it is sitting in the BIOS handshake, whose whole job is to poll
+		# the link waiting to be sent a program, so it re-reads the cable by
+		# design and needs no persuading.
+		#
+		# And the reset is not the cheap "second of boot logo" this rule assumes
+		# it is. Single-cartridge play downloads a program into this machine's
+		# RAM, and that program IS its entire state -- there is no cartridge
+		# underneath to come back to, so there is no "wanted either way" about
+		# it. Resetting drops the handheld to the no-cartridge screen and the
+		# host has to send the whole program again.
+		#
+		# That is what made single-pak play so unreliable: seating the last lead,
+		# or powering another machine on, re-forms the bus and renumbers the
+		# seats, and the renumber reset clients that had already been sent their
+		# copy.
+		if loaded_rom.is_empty():
 			continue
 		var seat: int = int(end.get("seat", NO_SEAT))
 		var had: int = int(end.get("live_seat", NO_SEAT))
