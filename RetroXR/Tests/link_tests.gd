@@ -41,6 +41,8 @@ func _ready() -> void:
 	await _test_bus_head_is_the_same_on_every_peer()
 	await _test_the_lead_will_seat()
 	await _test_a_seated_plug_sits_outside()
+	await _test_a_junction_plug_keeps_up()
+	await _test_the_junction_does_not_snap_through_vertical()
 	await _test_a_machine_takes_a_plug_the_same_way()
 	await _test_each_end_says_what_it_is()
 	await _test_every_socket_can_be_saved()
@@ -966,6 +968,154 @@ func _test_a_seated_plug_sits_outside() -> void:
 
 	lead.queue_free()
 	other.queue_free()
+	await get_tree().process_frame
+
+
+## A plug in the junction has to move WITH it, not a tick behind it.
+##
+## Every other socket is bolted to something: a machine's port and the plug in it
+## move together whatever order they are updated in. The junction rides the cord
+## and is moved by a script, so the order is the whole question — and the plug's
+## grab driver used to run first, placing the plug where the block had been on
+## the previous tick. Standing still that is invisible; with the cord moving at
+## hand speed the plug trailed the block by 14 mm and snapped back every time the
+## cord changed direction, dragging the second lead with it.
+func _test_a_junction_plug_keeps_up() -> void:
+	var room := Node3D.new()
+	add_child(room)
+	var holder_a := StaticBody3D.new()
+	holder_a.collision_layer = 1
+	holder_a.collision_mask = 0
+	room.add_child(holder_a)
+	holder_a.global_position = Vector3(-0.35, 0.9, 0)
+	var holder_b := StaticBody3D.new()
+	holder_b.collision_layer = 1
+	holder_b.collision_mask = 0
+	room.add_child(holder_b)
+	holder_b.global_position = Vector3(0.35, 0.9, 0)
+	var port_a: RcaPort = load(PORT_SCENE).instantiate()
+	holder_a.add_child(port_a)
+	var port_b: RcaPort = load(PORT_SCENE).instantiate()
+	holder_b.add_child(port_b)
+
+	# The lead hangs between the two sockets, the way it does between two
+	# machines, so its junction dangles on a cord that can actually move.
+	var lead: LinkCable = load(CABLE_SCENE).instantiate()
+	room.add_child(lead)
+	lead.global_position = Vector3(0, 0.9, 0)
+	await get_tree().physics_frame
+	port_a.pick_up_object(lead.get_node("PlugA0"))
+	port_b.pick_up_object(lead.get_node("PlugB0"))
+	for i in range(90):
+		await get_tree().physics_frame
+
+	var other: LinkCable = load(CABLE_SCENE).instantiate()
+	room.add_child(other)
+	other.global_position = Vector3(0, 0.6, 0.3)
+	await get_tree().physics_frame
+	var junction := lead.junction_port()
+	var plug := other.get_node("PlugA0") as Node3D
+	junction.pick_up_object(plug)
+	for i in range(60):
+		await get_tree().physics_frame
+
+	# Sweep the socket the way a hand carries a machine, and ask each tick how
+	# far the seated plug is from the seat it is supposed to be in.
+	var base := holder_b.global_position
+	var seated_plug := lead.get_node("PlugB0") as Node3D
+	var worst_junction := 0.0
+	var worst_machine := 0.0
+	var travelled := 0.0
+	var block := lead.get_node("Junction") as Node3D
+	var was: Vector3 = block.global_position
+	for f in range(120):
+		holder_b.global_position = base + Vector3(
+			0.15 * sin(float(f) / 90.0 * TAU * 0.5), 0, 0)
+		await get_tree().physics_frame
+		worst_junction = maxf(worst_junction, plug.global_position.distance_to(
+			junction.snap_pose_for(plug).origin) * 1000.0)
+		worst_machine = maxf(worst_machine, seated_plug.global_position.distance_to(
+			port_b.snap_pose_for(seated_plug).origin) * 1000.0)
+		travelled = maxf(travelled, block.global_position.distance_to(was) * 1000.0)
+		was = block.global_position
+
+	# The sweep has to have MOVED the block, or the case below is measuring a
+	# cord standing still and cannot fail.
+	_ok("the sweep moves the junction", travelled > 2.0,
+		"%.2f mm/tick at the peak" % travelled)
+	# A plug in a machine's socket is the control: same driver, same sweep, and
+	# it has never had this problem.
+	_ok("a plug in a machine socket stays seated", worst_machine < 0.5,
+		"%.2f mm out at the peak" % worst_machine)
+	_ok("a plug in the junction stays seated too", worst_junction < 0.5,
+		"%.2f mm out at the peak, against %.2f mm/tick of junction travel"
+			% [worst_junction, travelled])
+
+	room.queue_free()
+	await get_tree().process_frame
+
+
+## The block must not snap round when the cord passes through vertical.
+##
+## _ride_junction aims the block along the cord. Aimed with world UP as the up
+## vector, a lead hanging off a machine — which runs straight DOWN through its
+## own junction — gives look_at two colinear vectors and no roll to choose from:
+## the engine warns and picks. Swung through vertical the block snapped 65 deg in
+## a single tick, taking the plug seated in it 18.6 mm with it.
+func _test_the_junction_does_not_snap_through_vertical() -> void:
+	var room := Node3D.new()
+	add_child(room)
+	var holder := StaticBody3D.new()
+	holder.collision_layer = 1
+	holder.collision_mask = 0
+	room.add_child(holder)
+	holder.global_position = Vector3(0, 1.6, 0)
+	var port: RcaPort = load(PORT_SCENE).instantiate()
+	holder.add_child(port)
+
+	# Held at one end only, so the cord hangs straight down through the junction.
+	var lead: LinkCable = load(CABLE_SCENE).instantiate()
+	room.add_child(lead)
+	lead.global_position = Vector3(0, 1.6, 0)
+	await get_tree().physics_frame
+	port.pick_up_object(lead.get_node("PlugA0"))
+	for i in range(120):
+		await get_tree().physics_frame
+
+	var other: LinkCable = load(CABLE_SCENE).instantiate()
+	room.add_child(other)
+	other.global_position = Vector3(0.3, 1.2, 0.2)
+	await get_tree().physics_frame
+	lead.junction_port().pick_up_object(other.get_node("PlugA0"))
+	for i in range(60):
+		await get_tree().physics_frame
+
+	var block := lead.get_node("Junction") as Node3D
+	var rope := lead.get_node("VerletRope") as VerletRope
+	var base := holder.global_position
+	var worst_roll := 0.0
+	var most_vertical := 0.0
+	var last: Basis = block.global_transform.basis
+	for f in range(240):
+		# Held awake: a sleeping cord cannot swing, and a case measuring a cord
+		# that never moved would pass whatever the aim does.
+		rope.wake()
+		holder.global_position = base + Vector3(
+			0.25 * sin(float(f) / 120.0 * TAU), 0, 0)
+		await get_tree().physics_frame
+		var b: Basis = block.global_transform.basis
+		worst_roll = maxf(worst_roll, rad_to_deg(b.x.angle_to(last.x)))
+		last = b
+		most_vertical = maxf(most_vertical, absf((-b.z).normalized().dot(Vector3.UP)))
+
+	# The swing has to actually reach vertical, or there is no degenerate aim to
+	# survive and the case cannot fail.
+	_ok("the swung cord runs vertical through the block", most_vertical > 0.95,
+		"cord-vs-up %.3f at the closest" % most_vertical)
+	_ok("and the block turns with it rather than snapping round", worst_roll < 15.0,
+		"%.2f deg in one tick at the peak" % worst_roll)
+
+	room.queue_free()
 	await get_tree().process_frame
 
 

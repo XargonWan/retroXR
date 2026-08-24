@@ -448,6 +448,10 @@ func _link_port_at(e: int) -> LinkPort:
 ## socket that does not move with the lead it is moulded into reads as broken.
 const JUNCTION_AT := 0.25
 
+## The block's own up, carried between ticks so its roll stays continuous as the
+## cord swings. See _ride_junction.
+var _junction_up := Vector3.UP
+
 
 ## The seat a machine last had on a live bus, set on its Libretro node and reset
 ## to NONE when the machine is switched on again.
@@ -479,6 +483,32 @@ const NO_SEAT := -1
 ## what covers it once it has.
 const RESTATE_COOLDOWN := 20
 var _restate_wait := 0
+
+
+## Run this lead's tick BEFORE the snap zones place the plugs seated in it.
+##
+## Every other socket in the room is bolted to something: a machine's port and
+## the plug in it move together, whatever order they are updated in. The junction
+## is not — it rides this lead's cord, and _ride_junction moves it from
+## _physics_process. The plug seated in it is placed by its own grab driver,
+## which XRToolsGrabDriver._priority_for gives -70 (-80 for a hand), so at the
+## default 0 the block moved AFTER the plug had already been put where the block
+## was LAST tick, every tick.
+##
+## Standing still that is invisible. Measured with a socket swept at hand speed,
+## the plug trailed the junction by a full tick — 14.25 mm at the peak, snapping
+## back each time the cord changed direction, and dragging the whole second lead
+## with it. Ahead of the drivers the same sweep measures 0.00 mm.
+##
+## Between the two driver priorities rather than below both: a plug in a HAND is
+## what moves this cord in the first place, so it should be placed before the
+## cord reads it.
+const RIDE_PRIORITY := -75
+
+
+func _ready() -> void:
+	super._ready()
+	process_physics_priority = RIDE_PRIORITY
 
 
 func _physics_process(delta: float) -> void:
@@ -584,7 +614,23 @@ func _ride_junction() -> void:
 	junction.global_position = here
 	# -Z runs along the cord, which leaves the socket facing out of the block's
 	# side rather than back down the wire it is moulded into.
-	junction.look_at(here + along.normalized(), Vector3.UP)
+	#
+	# The up vector is CARRIED from the last tick and squared against the cord,
+	# rather than taken from world UP each time. A lead hanging off a machine
+	# runs straight down through its own junction, and look_at has no roll to
+	# give when the cord and the up vector lie on the same line: it warns about
+	# colinear vectors and picks. Measured with the cord swung through vertical,
+	# the block snapped 65 deg in a single tick and threw the plug seated in it
+	# 18.6 mm with it. Carried forward, the roll is continuous through vertical
+	# and there is no line to be colinear with.
+	var dir := along.normalized()
+	var up := _junction_up - dir * dir.dot(_junction_up)
+	if up.length_squared() < 1e-6:
+		# The carried up has drifted onto the cord itself. Any perpendicular
+		# restarts it; the next tick carries on from wherever that lands.
+		up = dir.cross(Vector3.RIGHT if absf(dir.x) < 0.9 else Vector3.FORWARD)
+	_junction_up = up.normalized()
+	junction.look_at(here + dir, _junction_up)
 
 
 func _disconnect() -> void:
