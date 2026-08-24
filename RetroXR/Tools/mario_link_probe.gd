@@ -91,7 +91,7 @@ func _run() -> void:
 		return
 	print("[mario] rom  %s" % rom)
 
-	_filming = "--film" in OS.get_cmdline_user_args()
+	_filming = "--film" in _args()
 
 	var root := CoreDownloadManager.default_core_root()
 	if not _enable_link_option(root):
@@ -101,7 +101,7 @@ func _run() -> void:
 
 	# Two by default, up to the four a GBA link cable carries.
 	var players := 2
-	for arg in OS.get_cmdline_user_args():
+	for arg in _args():
 		if arg.begins_with("--players="):
 			players = clampi(int(arg.substr(10)), 2, 4)
 	for i in range(players):
@@ -148,7 +148,7 @@ func _run() -> void:
 	# with the lead already seated hides a whole class of fault, because then the
 	# count is settled before the guest ever looks at it.
 	var order := "cable-first"
-	for arg in OS.get_cmdline_user_args():
+	for arg in _args():
 		if arg.begins_with("--order="):
 			order = arg.substr(8)
 	for i in range(20):
@@ -512,11 +512,45 @@ func _hold(mask: int, press_frames: int, gap_frames: int, who: Array = []) -> vo
 	await _wait_frames(gap_frames)
 
 
+## Arguments, from the command line and from a cfg file beside it.
+##
+## The Quest has no command line, so an on-device run takes its arguments the way
+## netplay_spike does: one per line in a cfg the harness drops in first. Read from
+## /sdcard as well as user://, because that is the path adb can write without
+## run-as, and deleted on sight so a crash mid-run cannot wedge the app into the
+## probe on the next launch.
+##
+## Cached, because this is asked several times and the read has a side effect.
+var _cli: PackedStringArray = []
+var _cli_read := false
+
+const EXTERNAL_CFG := "/sdcard/Android/data/com.xenu.retroxr/files/marioprobe.cfg"
+
+
+func _args() -> PackedStringArray:
+	if _cli_read:
+		return _cli
+	_cli_read = true
+	_cli = OS.get_cmdline_user_args()
+	for path in ["user://marioprobe.cfg", EXTERNAL_CFG]:
+		if not FileAccess.file_exists(path):
+			continue
+		var f := FileAccess.open(path, FileAccess.READ)
+		if f != null:
+			while not f.eof_reached():
+				var line := f.get_line().strip_edges()
+				if not line.is_empty():
+					_cli.append(line)
+			f.close()
+		DirAccess.remove_absolute(ProjectSettings.globalize_path(path))
+	return _cli
+
+
 func _find_rom() -> String:
 	var roots: PackedStringArray = [RomLibrary.default_roms_root()]
 	# The bulk library lives off the project, so take it from the command line
 	# rather than guessing a drive letter.
-	for arg in OS.get_cmdline_user_args():
+	for arg in _args():
 		if arg.begins_with("--roms="):
 			roots.append(arg.substr(7))
 	for root in roots:

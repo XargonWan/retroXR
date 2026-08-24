@@ -18,6 +18,7 @@ const MAX_PLAYERS := 8
 ## user://. Spelled out rather than derived, the same way rom_library.gd spells
 ## out each of its roots.
 const GLPROBE_EXTERNAL_CFG := "/sdcard/Android/data/com.xenu.retroxr/files/glprobe.cfg"
+const MARIOPROBE_EXTERNAL_CFG := "/sdcard/Android/data/com.xenu.retroxr/files/marioprobe.cfg"
 const RBCOST_EXTERNAL_CFG := "/sdcard/Android/data/com.xenu.retroxr/files/rbcost.cfg"
 ## 2: systems are replicated by model_id rather than by a (systemid, variant)
 ## pair. 3 added netplay. 4 made linked sessions carry a specification per
@@ -153,6 +154,16 @@ func _parse_cmdline() -> void:
 			and ResourceLoader.exists("res://Tools/rollback_cost_probe.tscn"):
 		print("[NetworkManager] rbcost.cfg found — launching rollback cost probe")
 		_swap_in_probe("res://Tools/rollback_cost_probe.tscn")
+		return
+	# Same hook for the GBA link probe, which is how the multiplayer grain is
+	# vetted on the machine that actually struggles with it: four cabled cores is
+	# a Quest problem before it is a desktop one. Read from /sdcard too, like the
+	# GL and rollback probes, and the probe deletes the cfg itself.
+	if (FileAccess.file_exists("user://marioprobe.cfg") \
+			or FileAccess.file_exists(MARIOPROBE_EXTERNAL_CFG)) \
+			and ResourceLoader.exists("res://Tools/mario_link_probe.tscn"):
+		print("[NetworkManager] marioprobe.cfg found — launching GBA link probe")
+		_swap_in_probe("res://Tools/mario_link_probe.tscn")
 		return
 	# Same hook for menu timings. Deleted on sight, so a crash mid-run cannot
 	# wedge the app into the probe.
