@@ -1,6 +1,8 @@
 {
   "enabled_classes": [
     "ArrayMesh",
+    "AudioEffect",
+    "AudioEffectInstance",
     "AudioFrame",
     "AudioServer",
     "AudioStream",
@@ -9,7 +11,9 @@
     "AudioStreamPlayback",
     "AudioStreamPlayer",
     "AudioStreamPlayer3D",
+    "CanvasItem",
     "CapsuleShape3D",
+    "Control",
     "DirAccess",
     "DisplayServer",
     "Engine",
@@ -24,6 +28,7 @@
     "InputEventMouseMotion",
     "JavaClass",
     "JavaClassWrapper",
+    "Logger",
     "MeshInstance3D",
     "Node",
     "Node3D",
